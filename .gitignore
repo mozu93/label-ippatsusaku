@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+*.spec.bak
+label_ippatsusaku.db
+label_ippatsusaku.db-shm
+label_ippatsusaku.db-wal
+.env
