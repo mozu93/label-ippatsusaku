@@ -106,12 +106,20 @@ TABLE_STYLE = (
     f"  font-size: 13px; font-family: '{FONT_FAMILY}'; }}"
     f"QTableWidget::item {{ padding: 4px 8px; color: {C_TEXT}; }}"
     f"QTableWidget::item:selected {{ background: {C_PRIMARY_LIGHT}; color: {C_TEXT}; }}"
+    f"QTableWidget::item:hover {{ background: #BBDEFB; color: {C_TEXT}; }}"
     f"QTableWidget::item:alternate {{ background: #FAFBFC; }}"
     f"QHeaderView::section {{"
     f"  background: {C_BG}; border: none; "
     f"  border-bottom: 2px solid {C_BORDER}; "
     f"  font-weight: bold; color: {C_TEXT_SUB}; "
     f"  font-size: 12px; font-family: '{FONT_FAMILY}'; padding: 6px 8px; }}"
+    f"QTableWidget::indicator {{ width: 15px; height: 15px; }}"
+    f"QTableWidget::indicator:unchecked {{"
+    f"  border: 2px solid #94A3B8; border-radius: 3px; background: white; }}"
+    f"QTableWidget::indicator:checked {{"
+    f"  border: 2px solid {C_PRIMARY}; border-radius: 3px; background: {C_PRIMARY}; }}"
+    f"QTableWidget::indicator:unchecked:hover {{"
+    f"  border-color: {C_PRIMARY}; }}"
 )
 
 # ── ページタイトルラベルスタイル ───────────────────────────────────

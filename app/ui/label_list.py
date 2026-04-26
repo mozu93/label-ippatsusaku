@@ -2,7 +2,6 @@
 """
 宛名ラベル一覧画面
 """
-import os
 from datetime import datetime
 
 from PyQt6.QtWidgets import (
@@ -16,7 +15,7 @@ from PyQt6.QtGui import QFont
 from app.database.models import get_session, LabelBatch
 from app.ui.pagination_bar import PaginationBar
 from app.ui.theme import (
-    BTN_PRIMARY, BTN_SUCCESS, BTN_DANGER,
+    BTN_PRIMARY, BTN_DANGER,
     TABLE_STYLE, PAGE_TITLE_STYLE, PAGE_MARGIN,
     C_TEXT_SUB, BTN_H, BTN_H_SM, ROW_H,
     font_page_title,
@@ -152,9 +151,9 @@ class LabelListWidget(QWidget):
         self.table.setColumnWidth(COL_CHK,  32)
         self.table.setColumnWidth(COL_ID,   50)
         self.table.setColumnWidth(COL_CNT,  60)
-        self.table.setColumnWidth(COL_MODE, 80)
+        self.table.setColumnWidth(COL_MODE, 110)
         self.table.setColumnWidth(COL_DATE, 145)
-        self.table.setColumnWidth(COL_OPS,  190)
+        self.table.setColumnWidth(COL_OPS,  80)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -168,6 +167,7 @@ class LabelListWidget(QWidget):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
         """)
         self.table.itemClicked.connect(self._on_item_clicked)
+        self.table.doubleClicked.connect(self._on_double_click)
         layout.addWidget(self.table)
 
         # ── ページネーション ──────────────────────────────
@@ -204,7 +204,13 @@ class LabelListWidget(QWidget):
 
     def _render(self, counts: dict, batches: list | None = None):
         self.table.setRowCount(0)
-        MODE_LABEL = {"normal": "通常", "simple": "簡易", "nametag": "名札", "split4": "プレート"}
+        MODE_LABEL = {
+            "normal":    "宛名(氏名あり)",
+            "no_person": "宛名(氏名なし)",
+            "simple":    "事業所名のみ",
+            "nametag":   "名札",
+            "split4":    "卓上プレート",
+        }
         display_batches = batches if batches is not None else self._batches
 
         for b in display_batches:
@@ -241,28 +247,10 @@ class LabelListWidget(QWidget):
             ops_layout.setContentsMargins(4, 6, 4, 6)
             ops_layout.setSpacing(4)
 
-            btn_open = QPushButton("開く")
-            btn_open.setStyleSheet(BTN_PRIMARY)
-            btn_open.clicked.connect(lambda _, bid=b.id: self._open_batch(bid))
-
-            pdf_path = getattr(b, "pdf_path", "") or ""
-            pdf_ok = bool(pdf_path and os.path.isfile(pdf_path))
-            btn_pdf = QPushButton("PDF 開く")
-            btn_pdf.setEnabled(pdf_ok)
-            btn_pdf.setStyleSheet(
-                BTN_SUCCESS if pdf_ok else
-                "QPushButton { background: #B0BEC5; color: #ECEFF1; border-radius: 3px; "
-                "padding: 0 8px; border: none; }"
-            )
-            btn_pdf.setToolTip(pdf_path if pdf_path else "PDF がまだ生成されていません")
-            btn_pdf.clicked.connect(lambda _, p=pdf_path: os.startfile(p))
-
             btn_del = QPushButton("削除")
             btn_del.setStyleSheet(BTN_DANGER)
             btn_del.clicked.connect(lambda _, bid=b.id: self._delete(bid))
 
-            ops_layout.addWidget(btn_open)
-            ops_layout.addWidget(btn_pdf)
             ops_layout.addWidget(btn_del)
             self.table.setCellWidget(row, COL_OPS, ops)
 
@@ -306,6 +294,14 @@ class LabelListWidget(QWidget):
         self._btn_bulk_del.setEnabled(bool(self._get_checked_ids()))
 
     # ── ダイアログ操作 ────────────────────────────────────────────────────
+
+    def _on_double_click(self, index):
+        chk_item = self.table.item(index.row(), COL_CHK)
+        if chk_item is None:
+            return
+        batch_id = chk_item.data(Qt.ItemDataRole.UserRole)
+        if batch_id is not None:
+            self._open_batch(batch_id)
 
     def _open_new(self):
         from app.ui.direct_label_dialog import DirectLabelDialog

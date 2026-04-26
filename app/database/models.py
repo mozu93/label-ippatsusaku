@@ -44,6 +44,7 @@ class LabelEntry(Base):
     sort_order   = Column(Integer, default=0)
     client_id    = Column(Integer, nullable=True)
     company_name = Column(String(200), default="")
+    company_kana = Column(String(200), default="")
     postal_code  = Column(String(10), default="")
     address1     = Column(String(200), default="")
     address2     = Column(String(200), default="")
@@ -66,7 +67,14 @@ def get_engine():
 
 
 def init_db():
-    Base.metadata.create_all(get_engine())
+    engine = get_engine()
+    Base.metadata.create_all(engine)
+    from sqlalchemy import text, inspect as sa_inspect
+    with engine.connect() as conn:
+        cols = [c["name"] for c in sa_inspect(engine).get_columns("label_entries")]
+        if "company_kana" not in cols:
+            conn.execute(text("ALTER TABLE label_entries ADD COLUMN company_kana VARCHAR(200) DEFAULT ''"))
+            conn.commit()
 
 
 def get_session():

@@ -22,6 +22,7 @@ from typing import Optional
 class DirectRow:
     """直接貼り付けモード用：住所を含むすべての情報を自前で持つ"""
     company_name: str = ""
+    company_kana: str = ""
     postal_code:  str = ""
     address1:     str = ""
     address2:     str = ""
@@ -181,7 +182,8 @@ def parse_csv_bytes(data: bytes) -> list[ImportRow]:
 # ──────────────────────────────────────────────
 
 # 直接入力の列名マッピング
-_DIR_COMPANY  = {"企業名", "会社名", "company"}
+_DIR_COMPANY  = {"企業名", "会社名", "事業所名", "company"}
+_DIR_KANA     = {"フリガナ", "読み", "よみ", "ふりがな", "kana"}
 _DIR_POSTAL   = {"郵便番号", "postal", "zip"}
 _DIR_ADDR1    = {"住所", "住所1", "address", "address1"}
 _DIR_ADDR2    = {"住所2", "address2"}
@@ -211,6 +213,7 @@ def _extract_direct_row(row_dict: dict) -> DirectRow:
 
     return DirectRow(
         company_name=_pick(_DIR_COMPANY),
+        company_kana=_pick(_DIR_KANA),
         postal_code =_pick(_DIR_POSTAL),
         address1    =_pick(_DIR_ADDR1),
         address2    =_pick(_DIR_ADDR2),
@@ -225,6 +228,7 @@ def _cols_to_direct_row(cols: list[str], field_order: list[str]) -> DirectRow:
                for i in range(len(field_order))}
     return DirectRow(
         company_name=mapping.get("company_name", ""),
+        company_kana=mapping.get("company_kana", ""),
         postal_code =mapping.get("postal_code",  ""),
         address1    =mapping.get("address1",      ""),
         address2    =mapping.get("address2",      ""),
@@ -251,7 +255,7 @@ def parse_raw_clipboard(text: str) -> tuple[list[str], list[list[str]]]:
 
     first_cols = all_rows[0]
     all_known = {_normalize(k)
-                 for ks in (_DIR_COMPANY, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
+                 for ks in (_DIR_COMPANY, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
                              _DIR_TITLE, _DIR_PERSON)
                  for k in ks}
     has_header = any(_normalize(c) in all_known for c in first_cols)
@@ -280,7 +284,7 @@ def parse_direct_clipboard(text: str) -> list[DirectRow]:
 
     first_cols = [c.strip() for c in lines[0].split("\t")]
     all_known  = {_normalize(k)
-                  for ks in (_DIR_COMPANY, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
+                  for ks in (_DIR_COMPANY, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
                               _DIR_TITLE, _DIR_PERSON)
                   for k in ks}
     has_header = any(_normalize(c) in all_known for c in first_cols)
@@ -309,6 +313,30 @@ def parse_direct_clipboard(text: str) -> list[DirectRow]:
                 rows.append(dr)
 
     return rows
+
+
+def parse_raw_csv_bytes(data: bytes) -> tuple[list[str], list[list[str]]]:
+    """CSV ファイルのバイト列をヘッダーとデータ行のリストに分解する。"""
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "shift-jis", "cp932"):
+        try:
+            text = data.decode(enc)
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    if text is None:
+        raise ValueError("CSV のエンコーディングを認識できません（UTF-8 / Shift-JIS を使用してください）")
+
+    all_rows = [row for row in csv.reader(io.StringIO(text))
+                if any(cell.strip() for cell in row)]
+    if not all_rows:
+        return [], []
+
+    headers = [h.strip() for h in all_rows[0]]
+    data_rows = [[cell.strip() for cell in row] for row in all_rows[1:]]
+    ncols = len(headers)
+    data_rows = [row + [""] * (ncols - len(row)) for row in data_rows]
+    return headers, data_rows
 
 
 def parse_direct_csv_bytes(data: bytes) -> list[DirectRow]:

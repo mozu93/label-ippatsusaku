@@ -10,18 +10,18 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QButtonGroup, QRadioButton,
     QTableWidget, QTableWidgetItem, QHeaderView,
     QMessageBox, QFileDialog,
-    QComboBox,
+    QComboBox, QLineEdit,
     QDialogButtonBox, QPlainTextEdit, QStyledItemDelegate,
     QAbstractItemDelegate,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QFont
 
 from app.database.models import get_session, LabelBatch, LabelEntry
 from app.utils.label_import import (
-    parse_direct_csv_bytes, parse_raw_clipboard,
+    parse_raw_csv_bytes, parse_raw_clipboard,
     DirectRow,
-    _normalize, _DIR_COMPANY, _DIR_POSTAL, _DIR_ADDR1, _DIR_TITLE, _DIR_PERSON,
+    _normalize, _DIR_COMPANY, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_TITLE, _DIR_PERSON,
     _FALLBACK_COLS,
 )
 from app.services.label_pdf_service import (
@@ -59,6 +59,7 @@ class _MultilineDelegate(QStyledItemDelegate):
         editor = QPlainTextEdit(parent)
         editor.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         editor.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        editor.setStyleSheet("background: white; border: 1px solid #1565C0;")
         return editor
 
     def setEditorData(self, editor, index):
@@ -96,19 +97,29 @@ class ColumnMappingDialog(QDialog):
     """貼り付けデータの列を各フィールドに対応付けるダイアログ"""
 
     _FIELDS = [
-        ("company_name", "企業名",     True),
-        ("postal_code",  "郵便番号",   False),
-        ("address1",     "住所",       False),
-        ("title",        "所属・役職", False),
-        ("person_name",  "氏名",       False),
+        ("company_name", "事業所名"),
+        ("company_kana", "フリガナ（読み）"),
+        ("title",        "所属・役職名"),
+        ("person_name",  "氏名"),
+        ("postal_code",  "郵便番号"),
+        ("address1",     "住所"),
     ]
 
-    def __init__(self, headers: list, preview_rows: list, parent=None):
+    _REQUIRED_BY_MODE: dict[str, set] = {
+        "normal":    {"company_name", "address1", "person_name"},
+        "no_person": {"company_name", "address1"},
+        "simple":    {"company_name"},
+        "nametag":   {"company_name", "person_name"},
+        "split4":    {"company_name"},
+    }
+
+    def __init__(self, headers: list, preview_rows: list, mode: str = "normal", parent=None):
         super().__init__(parent)
         self.setWindowTitle("列の対応を設定")
         self.setMinimumSize(720, 520)
         self._headers = headers
         self._preview_rows = preview_rows
+        self._required = self._REQUIRED_BY_MODE.get(mode, {"company_name"})
         self._combos: dict = {}
         self._init_ui()
         self._auto_detect()
@@ -142,9 +153,10 @@ class ColumnMappingDialog(QDialog):
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         choices = ["（使用しない）"] + self._headers
 
-        for field_id, field_label, required in self._FIELDS:
+        for field_id, field_label in self._FIELDS:
             combo = QComboBox()
             combo.addItems(choices)
+            required = field_id in self._required
             suffix = " <span style='color:red'>*</span>" if required else ""
             lbl = QLabel(f"{field_label}{suffix}")
             lbl.setTextFormat(Qt.TextFormat.RichText)
@@ -166,6 +178,7 @@ class ColumnMappingDialog(QDialog):
     def _auto_detect(self):
         field_keys = {
             "company_name": _DIR_COMPANY,
+            "company_kana": _DIR_KANA,
             "postal_code":  _DIR_POSTAL,
             "address1":     _DIR_ADDR1,
             "title":        _DIR_TITLE,
@@ -189,18 +202,23 @@ class ColumnMappingDialog(QDialog):
             )
             if field_order:
                 for col_idx, field_id in enumerate(field_order):
-                    if col_idx < len(self._headers):
+                    if col_idx < len(self._headers) and field_id in self._combos:
                         self._combos[field_id].setCurrentIndex(col_idx + 1)
 
     def _on_ok(self):
-        if self._combos["company_name"].currentIndex() == 0:
-            QMessageBox.warning(self, "入力エラー", "「企業名」列を選択してください。")
-            return
+        label_map = {fid: lbl for fid, lbl in self._FIELDS}
+        for field_id in self._required:
+            if self._combos[field_id].currentIndex() == 0:
+                QMessageBox.warning(
+                    self, "入力エラー",
+                    f"「{label_map.get(field_id, field_id)}」列を選択してください。"
+                )
+                return
         self.accept()
 
     def get_mapping(self) -> dict:
         result = {}
-        for field_id, _, _ in self._FIELDS:
+        for field_id, _ in self._FIELDS:
             idx = self._combos[field_id].currentIndex()
             result[field_id] = (idx - 1) if idx > 0 else None
         return result
@@ -221,17 +239,18 @@ class DirectLabelDialog(QDialog):
     """
 
     _COLS = [
-        ("企業名",    200, QHeaderView.ResizeMode.Stretch),
-        ("郵便番号",   90, QHeaderView.ResizeMode.Fixed),
-        ("住所",      250, QHeaderView.ResizeMode.Stretch),
-        ("所属・役職", 120, QHeaderView.ResizeMode.Interactive),
-        ("氏名",      120, QHeaderView.ResizeMode.Interactive),
+        ("事業所名",    200, QHeaderView.ResizeMode.Stretch),
+        ("フリガナ",    130, QHeaderView.ResizeMode.Interactive),
+        ("所属・役職名", 130, QHeaderView.ResizeMode.Interactive),
+        ("氏名",        120, QHeaderView.ResizeMode.Interactive),
+        ("郵便番号",     90, QHeaderView.ResizeMode.Fixed),
+        ("住所",        250, QHeaderView.ResizeMode.Stretch),
     ]
 
     def __init__(self, batch_id: int | None = None, parent=None):
         super().__init__(parent)
         self._batch_id = batch_id
-        self.setWindowTitle("宛名ラベル 新規作成")
+        self.setWindowTitle("宛名ラベル 新規作成" if batch_id is None else "宛名ラベル 編集")
         self.setMinimumSize(900, 580)
         self.resize(980, 640)
         self._init_ui()
@@ -244,8 +263,9 @@ class DirectLabelDialog(QDialog):
         root.setSpacing(10)
 
         banner = QLabel(
-            "取引先マスタを使わず、貼り付けた内容をそのままラベルに出力します。<br>"
-            "データは一時的なスナップショットとして保存され、マスタには反映されません。"
+            "宛名ラベル、事業所名ラベル、名札、事業所名プレートを作成します。<br>"
+            "手順：①データ名を入力　②モードを選択　"
+            "③必要なデータをクリップボードにコピーして取り込むか、CSVから読み込む。"
         )
         banner.setWordWrap(True)
         banner.setStyleSheet(
@@ -254,31 +274,108 @@ class DirectLabelDialog(QDialog):
         )
         root.addWidget(banner)
 
+        name_row = QHBoxLayout()
+        name_row.setSpacing(8)
+        name_lbl = QLabel("データ名")
+        name_lbl.setStyleSheet("font-weight: bold; font-size: 13px;")
+        name_lbl.setFixedWidth(60)
+        self._data_name_edit = QLineEdit()
+        self._data_name_edit.setPlaceholderText("例）〇〇部会、〇〇視察研修会")
+        self._data_name_edit.setFixedHeight(34)
+        self._data_name_edit.setStyleSheet(
+            "QLineEdit { border: 1px solid #CBD5E1; border-radius: 4px; "
+            "padding: 0 8px; font-size: 13px; }"
+            "QLineEdit:focus { border-color: #1565C0; }"
+        )
+        name_row.addWidget(name_lbl)
+        name_row.addWidget(self._data_name_edit)
+        root.addLayout(name_row)
+
         top_form = QHBoxLayout()
         top_form.setSpacing(16)
         mode_lbl = QLabel("モード")
         mode_lbl.setFixedWidth(44)
-        self._radio_normal  = QRadioButton("通常（住所・氏名あり）")
-        self._radio_simple  = QRadioButton("簡易（企業名のみ）")
-        self._radio_nametag = QRadioButton("名札（氏名を大きく）")
-        self._radio_split4  = QRadioButton("プレートモード（均等割付）")
+        self._radio_normal    = QRadioButton("宛名ラベル（氏名あり）")
+        self._radio_no_person = QRadioButton("宛名ラベル（氏名なし）")
+        self._radio_simple    = QRadioButton("宛名ラベル（事業所名のみ）")
+        self._radio_nametag   = QRadioButton("名札")
+        self._radio_split4    = QRadioButton("卓上事業所名プレート")
         self._radio_normal.setChecked(True)
         grp = QButtonGroup(self)
-        grp.addButton(self._radio_normal,  0)
-        grp.addButton(self._radio_simple,  1)
-        grp.addButton(self._radio_nametag, 2)
-        grp.addButton(self._radio_split4,  3)
+        grp.addButton(self._radio_normal,    0)
+        grp.addButton(self._radio_no_person, 1)
+        grp.addButton(self._radio_simple,    2)
+        grp.addButton(self._radio_nametag,   3)
+        grp.addButton(self._radio_split4,    4)
         self._radio_normal.toggled.connect(self._on_mode_toggled)
+        self._radio_no_person.toggled.connect(self._on_mode_toggled)
         self._radio_simple.toggled.connect(self._on_mode_toggled)
         self._radio_nametag.toggled.connect(self._on_mode_toggled)
         self._radio_split4.toggled.connect(self._on_mode_toggled)
         top_form.addWidget(mode_lbl)
         top_form.addWidget(self._radio_normal)
+        top_form.addWidget(self._radio_no_person)
         top_form.addWidget(self._radio_simple)
         top_form.addWidget(self._radio_nametag)
         top_form.addWidget(self._radio_split4)
         top_form.addStretch()
         root.addLayout(top_form)
+
+        self._normal_banner = QLabel(
+            "事業所名、郵便番号、住所、所属・役職　氏名をExcelからコピーするか、"
+            "CSVデータを取り込んでください。"
+            "郵便番号がわからない場合は住所から変換できます。（要インターネット接続）"
+        )
+        self._normal_banner.setWordWrap(True)
+        self._normal_banner.setStyleSheet(
+            "background: #F0FDF4; color: #166534; border: 1px solid #86EFAC; "
+            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
+        )
+        self._normal_banner.setVisible(True)
+        root.addWidget(self._normal_banner)
+
+        self._no_person_banner = QLabel(
+            "事業所名・住所のみ出力します。氏名・所属・役職は印刷されません。"
+            "「御中」が自動的に付きます。"
+        )
+        self._no_person_banner.setWordWrap(True)
+        self._no_person_banner.setStyleSheet(
+            "background: #F0FDF4; color: #166534; border: 1px solid #86EFAC; "
+            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
+        )
+        self._no_person_banner.setVisible(False)
+        root.addWidget(self._no_person_banner)
+
+        self._simple_banner = QLabel(
+            "企業名のみ出力されます。住所・肩書・氏名は印刷されません。"
+        )
+        self._simple_banner.setStyleSheet(
+            "background: #FFF3E0; color: #E65100; border: 1px solid #FFB74D; "
+            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
+        )
+        self._simple_banner.setVisible(False)
+        root.addWidget(self._simple_banner)
+
+        self._nametag_banner = QLabel(
+            "事業所名、所属・役職、氏名を名刺サイズで出力します。"
+        )
+        self._nametag_banner.setStyleSheet(
+            "background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; "
+            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
+        )
+        self._nametag_banner.setVisible(False)
+        root.addWidget(self._nametag_banner)
+
+        self._split4_banner = QLabel(
+            "事業所名をA4用紙横長４分割したサイズで均等割付して出力します。"
+            "上下回転させた事業所名を同時出力するので半分に折って使用します。"
+        )
+        self._split4_banner.setStyleSheet(
+            "background: #F0FDF4; color: #166534; border: 1px solid #86EFAC; "
+            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
+        )
+        self._split4_banner.setVisible(False)
+        root.addWidget(self._split4_banner)
 
         ops = QHBoxLayout()
         ops.setSpacing(6)
@@ -316,6 +413,16 @@ class DirectLabelDialog(QDialog):
         )
         btn_postal.clicked.connect(self._fill_postal_codes)
 
+        btn_kana = QPushButton("フリガナを自動入力")
+        btn_kana.setFixedHeight(32)
+        btn_kana.setStyleSheet(_BTN_SECONDARY)
+        btn_kana.setToolTip(
+            "事業所名が入力されていてフリガナが空の行に、\n"
+            "カタカナのフリガナを自動補完します。\n"
+            "株式会社・有限会社などの法人種別名は除いて変換します。"
+        )
+        btn_kana.clicked.connect(self._fill_kana)
+
         hint = QLabel(
             "推奨列順（ヘッダーなし）: 企業名 → 郵便番号 → 住所 → 所属・役職 → 氏名"
             "　※所属・役職は省略可（4列: 企業名→郵便番号→住所→氏名）"
@@ -327,40 +434,10 @@ class DirectLabelDialog(QDialog):
         ops.addWidget(btn_add)
         ops.addWidget(btn_del)
         ops.addWidget(btn_postal)
+        ops.addWidget(btn_kana)
         ops.addStretch()
         ops.addWidget(hint)
         root.addLayout(ops)
-
-        self._simple_banner = QLabel(
-            "⚠  簡易モード：企業名のみ出力されます。住所・肩書・氏名は印刷されません。"
-        )
-        self._simple_banner.setStyleSheet(
-            "background: #FFF3E0; color: #E65100; border: 1px solid #FFB74D; "
-            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
-        )
-        self._simple_banner.setVisible(False)
-        root.addWidget(self._simple_banner)
-
-        self._nametag_banner = QLabel(
-            "名札モード：氏名を大きく出力します。住所は印刷されません（A-ONE 51002 等に最適）。"
-        )
-        self._nametag_banner.setStyleSheet(
-            "background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; "
-            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
-        )
-        self._nametag_banner.setVisible(False)
-        root.addWidget(self._nametag_banner)
-
-        self._split4_banner = QLabel(
-            "プレートモード：企業名を上下中央・均等割付で出力します。"
-            "1・3番ラベルは自動的に 180° 回転します（A4 4長4分割用紙向け）。"
-        )
-        self._split4_banner.setStyleSheet(
-            "background: #F0FDF4; color: #166534; border: 1px solid #86EFAC; "
-            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
-        )
-        self._split4_banner.setVisible(False)
-        root.addWidget(self._split4_banner)
 
         self.table = QTableWidget(0, len(self._COLS))
         self.table.setHorizontalHeaderLabels([c[0] for c in self._COLS])
@@ -370,10 +447,23 @@ class DirectLabelDialog(QDialog):
             if mode == QHeaderView.ResizeMode.Fixed:
                 self.table.setColumnWidth(i, width)
         self.table.setAlternatingRowColors(True)
+        self.table.setStyleSheet(
+            "QTableWidget::item:selected {"
+            "  background-color: #BBDEFB; color: black;"
+            "}"
+            "QTableWidget::item:selected:active {"
+            "  background-color: #BBDEFB; color: black;"
+            "}"
+            "QTableWidget::item:hover {"
+            "  background-color: #BBDEFB; color: black;"
+            "}"
+        )
         self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setItemDelegateForColumn(0, _MultilineDelegate(self.table))
+        self.table.setItemDelegateForColumn(2, _MultilineDelegate(self.table))
+        self.table.installEventFilter(self)
         root.addWidget(self.table)
 
         foot = QHBoxLayout()
@@ -432,8 +522,8 @@ class DirectLabelDialog(QDialog):
 
         targets = [
             row for row in range(self.table.rowCount())
-            if not (self.table.item(row, 1) or QTableWidgetItem()).text().strip()
-            and (self.table.item(row, 2) or QTableWidgetItem()).text().strip()
+            if not (self.table.item(row, 4) or QTableWidgetItem()).text().strip()
+            and (self.table.item(row, 5) or QTableWidgetItem()).text().strip()
         ]
         if not targets:
             QMessageBox.information(self, "郵便番号補完",
@@ -444,11 +534,11 @@ class DirectLabelDialog(QDialog):
         self._btn_export.setEnabled(False)
         filled = skipped = 0
         for row in targets:
-            address = (self.table.item(row, 2) or QTableWidgetItem()).text().strip()
+            address = (self.table.item(row, 5) or QTableWidgetItem()).text().strip()
             QApplication.processEvents()
             zipcode = lookup_postal_code(address)
             if zipcode:
-                item = self.table.item(row, 1)
+                item = self.table.item(row, 4)
                 if item:
                     item.setText(zipcode)
                 filled += 1
@@ -461,6 +551,41 @@ class DirectLabelDialog(QDialog):
             msg += f"\n（{skipped} 件は住所から特定できませんでした）"
         QMessageBox.information(self, "郵便番号補完", msg)
 
+    def _fill_kana(self):
+        try:
+            from app.utils.kana_lookup import get_company_kana
+        except ImportError:
+            QMessageBox.critical(
+                self, "ライブラリ不足",
+                "pykakasi がインストールされていません。\n"
+                "pip install pykakasi を実行してください。"
+            )
+            return
+
+        targets = [
+            row for row in range(self.table.rowCount())
+            if not (self.table.item(row, 1) or QTableWidgetItem()).text().strip()
+            and (self.table.item(row, 0) or QTableWidgetItem()).text().strip()
+        ]
+        if not targets:
+            QMessageBox.information(self, "フリガナ補完",
+                                    "補完対象の行がありません。\n"
+                                    "（フリガナが空で事業所名が入力されている行が対象です）")
+            return
+
+        filled = 0
+        for row in targets:
+            company = (self.table.item(row, 0) or QTableWidgetItem()).text().strip()
+            kana = get_company_kana(company)
+            if kana:
+                item = self.table.item(row, 1)
+                if item:
+                    item.setText(kana)
+                filled += 1
+
+        QMessageBox.information(self, "フリガナ補完",
+                                f"{filled} 件のフリガナを補完しました。")
+
     def _load_batch(self, batch_id: int):
         session = get_session()
         try:
@@ -468,7 +593,10 @@ class DirectLabelDialog(QDialog):
             if not batch:
                 QMessageBox.warning(self, "エラー", "指定されたバッチが見つかりません。")
                 return
-            if batch.label_mode == "simple":
+            self._data_name_edit.setText(batch.batch_name or "")
+            if batch.label_mode == "no_person":
+                self._radio_no_person.setChecked(True)
+            elif batch.label_mode == "simple":
                 self._radio_simple.setChecked(True)
             elif batch.label_mode == "nametag":
                 self._radio_nametag.setChecked(True)
@@ -488,20 +616,40 @@ class DirectLabelDialog(QDialog):
                 addr = addr + (" " if addr else "") + e.address2
             self._add_row([
                 e.company_name or "",
-                e.postal_code  or "",
-                addr,
+                e.company_kana or "",
                 e.title        or "",
                 e.person_name  or "",
+                e.postal_code  or "",
+                addr,
             ])
+
+    def eventFilter(self, obj, event):
+        if obj is self.table and event.type() == QEvent.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                return True
+        return super().eventFilter(obj, event)
 
     def _on_mode_toggled(self, checked: bool):
         if not checked:
             return
+        self._normal_banner.setVisible(self._radio_normal.isChecked())
+        self._no_person_banner.setVisible(self._radio_no_person.isChecked())
         self._simple_banner.setVisible(self._radio_simple.isChecked())
         self._nametag_banner.setVisible(self._radio_nametag.isChecked())
         self._split4_banner.setVisible(self._radio_split4.isChecked())
 
+        if self._radio_nametag.isChecked():
+            idx = self._layout_combo.findData("a_one_51002")
+        elif self._radio_split4.isChecked():
+            idx = self._layout_combo.findData("a4_4split")
+        else:
+            idx = self._layout_combo.findData(DEFAULT_LAYOUT_KEY)
+        if idx >= 0:
+            self._layout_combo.setCurrentIndex(idx)
+
     def _current_mode(self) -> str:
+        if self._radio_no_person.isChecked():
+            return "no_person"
         if self._radio_simple.isChecked():
             return "simple"
         if self._radio_nametag.isChecked():
@@ -549,10 +697,11 @@ class DirectLabelDialog(QDialog):
         for dr in direct_rows:
             self._add_row([
                 dr.company_name,
-                dr.postal_code,
-                dr.address1 + (" " + dr.address2 if dr.address2 else ""),
+                dr.company_kana,
                 dr.title,
                 dr.person_name,
+                dr.postal_code,
+                dr.address1 + (" " + dr.address2 if dr.address2 else ""),
             ])
         QMessageBox.information(self, "取込完了", f"{len(direct_rows)} 件を取り込みました。")
 
@@ -571,7 +720,7 @@ class DirectLabelDialog(QDialog):
             QMessageBox.information(self, "貼り付け", "取込可能なデータがありませんでした。")
             return
 
-        dlg = ColumnMappingDialog(headers, data_rows[:5], self)
+        dlg = ColumnMappingDialog(headers, data_rows[:5], self._current_mode(), self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
@@ -583,6 +732,7 @@ class DirectLabelDialog(QDialog):
                 return _row[idx] if idx is not None and idx < len(_row) else ""
             dr = DirectRow(
                 company_name=_get("company_name"),
+                company_kana=_get("company_kana"),
                 postal_code =_get("postal_code"),
                 address1    =_get("address1"),
                 title       =_get("title"),
@@ -600,10 +750,34 @@ class DirectLabelDialog(QDialog):
             return
         try:
             with open(path, "rb") as f:
-                rows = parse_direct_csv_bytes(f.read())
+                headers, data_rows = parse_raw_csv_bytes(f.read())
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"CSV 読み込みエラー：\n{e}")
             return
+        if not headers:
+            QMessageBox.information(self, "CSV 取込", "取込可能なデータがありませんでした。")
+            return
+
+        dlg = ColumnMappingDialog(headers, data_rows[:5], self._current_mode(), self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        mapping = dlg.get_mapping()
+        rows = []
+        for row in data_rows:
+            def _get(field_id, _row=row):
+                idx = mapping.get(field_id)
+                return _row[idx] if idx is not None and idx < len(_row) else ""
+            dr = DirectRow(
+                company_name=_get("company_name"),
+                company_kana=_get("company_kana"),
+                postal_code =_get("postal_code"),
+                address1    =_get("address1"),
+                title       =_get("title"),
+                person_name =_get("person_name"),
+            )
+            if dr.company_name:
+                rows.append(dr)
         self._fill_rows(rows)
 
     def _export(self):
@@ -611,24 +785,18 @@ class DirectLabelDialog(QDialog):
             QMessageBox.warning(self, "データなし", "出力するデータがありません。")
             return
 
+        data_name = self._data_name_edit.text().strip()
+        if not data_name:
+            QMessageBox.warning(self, "データ名が未入力", "データ名を入力してください。")
+            self._data_name_edit.setFocus()
+            return
+
         last_dir = (
             get_direct_label_save_path()
             or get_label_save_path()
             or os.path.expanduser("~/Documents")
         )
-        default_name = ""
-        if self._batch_id is not None:
-            session = get_session()
-            try:
-                b = session.get(LabelBatch, self._batch_id)
-                if b:
-                    default_name = b.batch_name or ""
-            finally:
-                session.close()
-
-        default_path = os.path.join(
-            last_dir, f"{default_name}.pdf" if default_name else "宛名ラベル.pdf"
-        )
+        default_path = os.path.join(last_dir, f"{data_name}.pdf")
 
         pdf_path, _ = QFileDialog.getSaveFileName(
             self, "ラベルを保存", default_path, "PDF ファイル (*.pdf)",
@@ -638,7 +806,6 @@ class DirectLabelDialog(QDialog):
         if not pdf_path.lower().endswith(".pdf"):
             pdf_path += ".pdf"
 
-        name     = os.path.splitext(os.path.basename(pdf_path))[0]
         dest_dir = os.path.dirname(pdf_path)
         mode     = self._current_mode()
 
@@ -651,11 +818,12 @@ class DirectLabelDialog(QDialog):
                 "sort_order":   row,
                 "client_id":    None,
                 "company_name": _cell(0),
-                "postal_code":  _cell(1),
-                "address1":     _cell(2),
+                "company_kana": _cell(1),
+                "postal_code":  _cell(4),
+                "address1":     _cell(5),
                 "address2":     "",
-                "title":        _cell(3),
-                "person_name":  _cell(4),
+                "title":        _cell(2),
+                "person_name":  _cell(3),
                 "entry_mode":   "inherit",
             })
 
@@ -664,18 +832,18 @@ class DirectLabelDialog(QDialog):
             if self._batch_id is not None:
                 batch = session.get(LabelBatch, self._batch_id)
                 if batch:
-                    batch.batch_name = name
+                    batch.batch_name = data_name
                     batch.label_mode = mode
                     for old_e in list(batch.entries):
                         session.delete(old_e)
                     session.flush()
                 else:
-                    batch = LabelBatch(batch_name=name, label_mode=mode)
+                    batch = LabelBatch(batch_name=data_name, label_mode=mode)
                     session.add(batch)
                     session.flush()
                     self._batch_id = batch.id
             else:
-                batch = LabelBatch(batch_name=name, label_mode=mode)
+                batch = LabelBatch(batch_name=data_name, label_mode=mode)
                 session.add(batch)
                 session.flush()
                 self._batch_id = batch.id

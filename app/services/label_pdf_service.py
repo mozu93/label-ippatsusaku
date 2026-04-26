@@ -256,6 +256,8 @@ def _draw_label(c, entry, x0: float, y0: float, w: float, h: float, mode: str,
 
     if mode == "simple":
         _draw_simple(c, x0, y0, w, h, company, font)
+    elif mode == "no_person":
+        _draw_no_person(c, x0, y0, w, h, company, postal, addr1, addr2, font)
     elif mode == "nametag":
         _draw_nametag(c, x0, y0, w, h, company, title, person, font)
     elif mode == "split4":
@@ -316,32 +318,49 @@ def _draw_normal(c, x0, y0, w, h,
         cur_y -= LH * 0.4
 
     # ── 事業所名（企業名）────────────────────────────────────────────
-    # 8pt未満になる場合は折り返し、それ以外は自動縮小
+    # 10ptで1行に収まれば単行（最大11pt）、収まらなければ\n優先で10pt折り返し
     if company:
-        co_avail = inner_w - (indent1 - P)
-        co_fs    = _fit_text(company, font, co_max_fs, co_avail, min_size=8.0)
-        c.setFont(font, co_fs)
+        co_avail  = inner_w - (indent1 - P)
+        target_fs = 10.0
         c.setFillColor(black)
-        if co_fs < 8.0 or stringWidth(company, font, co_fs) > co_avail:
-            co_fs = 8.0
-            c.setFont(font, co_fs)
-            co_text = company
-            while co_text:
-                line, co_text = _split_line(co_text, font, co_fs, co_avail)
-                c.drawString(x0 + indent1, cur_y, line)
-                cur_y -= LH * 0.9
-        else:
+        if "\n" not in company and stringWidth(company, font, target_fs) <= co_avail:
+            fs = _fit_text(company, font, co_max_fs, co_avail, min_size=target_fs)
+            c.setFont(font, fs)
             c.drawString(x0 + indent1, cur_y, company)
             cur_y -= LH * 1.05
+        else:
+            c.setFont(font, target_fs)
+            for seg in company.split("\n"):
+                if not seg:
+                    continue
+                rem = seg
+                while rem:
+                    line, rem = _split_line(rem, font, target_fs, co_avail)
+                    c.drawString(x0 + indent1, cur_y, line)
+                    cur_y -= LH * 0.9
 
-    # ── 所属・役職（1行・自動縮小）──────────────────────────────────
+    # ── 所属・役職（10ptで1行、収まらなければ\n優先で折り返し）──────
     if title:
-        title_line = title.replace("\n", "　").strip()
-        t_fs = _fit_text(title_line, font, title_fs, inner_w - (indent1 - P), min_size=6.0)
-        c.setFont(font, t_fs)
+        title_avail = inner_w - (indent1 - P)
+        target_fs   = 10.0
         c.setFillColor(black)
-        c.drawString(x0 + indent1, cur_y, title_line)
-        cur_y -= LH * 0.95
+        t = title.strip()
+        if "\n" not in t and stringWidth(t, font, target_fs) <= title_avail:
+            fs = _fit_text(t, font, title_fs, title_avail, min_size=target_fs)
+            c.setFont(font, fs)
+            c.drawString(x0 + indent1, cur_y, t)
+            cur_y -= LH * 0.95
+        else:
+            c.setFont(font, target_fs)
+            for seg in t.split("\n"):
+                seg = seg.strip()
+                if not seg:
+                    continue
+                rem = seg
+                while rem:
+                    line, rem = _split_line(rem, font, target_fs, title_avail)
+                    c.drawString(x0 + indent1, cur_y, line)
+                    cur_y -= LH * 0.9
 
     # ── 氏名 + 様（役職あり: 少し余白、役職なし: 詰めて配置）──────────
     if person:
@@ -360,61 +379,180 @@ def _draw_normal(c, x0, y0, w, h,
         c.drawString(x0 + w - P - gw, name_y, "御中")
 
 
+# ── 氏名なしモード ─────────────────────────────────────────────────────
+
+def _draw_no_person(c, x0, y0, w, h, company, postal, addr1, addr2,
+                    font: str = "MSPGothic"):
+    """
+    宛名ラベル（氏名なし）：事業所名の末尾に半角スペース＋御中を同行出力する。
+    手動改行（\\n）を優先し、各セグメントを幅に応じてさらに自動折り返す。
+    御中は最終行の末尾に付く。
+    """
+    scale    = min(w / (92.5 * mm), h / (53.0 * mm))
+    P        = max(2.0 * mm, 3.0 * mm * scale)
+    inner_w  = w - 2 * P
+    indent1  = P + 2.5 * mm * scale
+    co_avail = inner_w - (indent1 - P)
+
+    addr_fs   = 11.0
+    co_max_fs = 11.0
+    LH        = addr_fs * 1.6
+
+    cur_y = y0 + h - P - addr_fs * 0.85
+
+    # 郵便番号
+    c.setFont(font, addr_fs)
+    c.setFillColor(C_SUB)
+    if postal:
+        c.drawString(x0 + P, cur_y, f"〒{postal}")
+        cur_y -= LH * 0.95
+
+    # 住所
+    if addr1:
+        a = addr1
+        while a:
+            line, a = _split_line(a, font, addr_fs, inner_w)
+            c.drawString(x0 + P, cur_y, line)
+            cur_y -= LH * 0.95
+    if addr2:
+        c.drawString(x0 + P, cur_y, addr2)
+        cur_y -= LH * 0.95
+
+    if postal or addr1 or addr2:
+        cur_y -= LH * 0.4
+
+    if not company:
+        return
+
+    c.setFillColor(black)
+    gochu = " 御中"
+
+    # 手動改行なし、かつ10ptで1行に収まる場合：最大11ptで単行出力
+    if "\n" not in company and stringWidth(company + gochu, font, 10.0) <= co_avail:
+        fs = _fit_text(company + gochu, font, co_max_fs, co_avail, min_size=10.0)
+        c.setFont(font, fs)
+        c.drawString(x0 + indent1, cur_y, company + gochu)
+        return
+
+    # 10ptで1行に収まらない、または手動改行あり → 10ptで折り返す
+    # 御中は最終行の末尾に付くよう、折り返しと同時に処理する
+    co_fs   = 10.0
+    c.setFont(font, co_fs)
+    gochu_w = stringWidth(gochu, font, co_fs)
+
+    segments  = [s for s in company.split("\n") if s]
+    all_lines = []
+
+    for seg_idx, seg in enumerate(segments):
+        is_last = (seg_idx == len(segments) - 1)
+        rem = seg
+        while rem:
+            if is_last and stringWidth(rem + gochu, font, co_fs) <= co_avail:
+                # 残り＋御中が1行に収まる → 最終行として確定
+                all_lines.append(rem + gochu)
+                rem = ""
+            else:
+                line, rem = _split_line(rem, font, co_fs, co_avail)
+                if is_last and not rem:
+                    # lineはco_availに収まるが御中が入らない
+                    # → lineを詰めて御中スペースを確保し、あふれ分をremへ戻す
+                    trimmed, rem = _split_line(line, font, co_fs, co_avail - gochu_w)
+                    all_lines.append(trimmed)
+                else:
+                    all_lines.append(line)
+
+    if not all_lines:
+        return
+
+    for i, line in enumerate(all_lines):
+        c.drawString(x0 + indent1, cur_y, line)
+        if i < len(all_lines) - 1:
+            cur_y -= LH * 0.9
+
+
 # ── 名札モード ──────────────────────────────────────────────────────────
 
 def _draw_nametag(c, x0, y0, w, h, company, title, person, font: str = "MSPGothic"):
     """
     名札レイアウト（A-ONE 51002 等 91×55mm 向け）
-    上から順に: 事業所名(18pt) → 所属・役職(14pt) → 氏名(18pt)
+    企業名 20pt(最小16pt折返) → 役職名 18pt(最小14pt折返) → 氏名 24pt（中央揃え）
     """
     P = 4.0 * mm
     inner_w = w - 2 * P
 
-    co_fs = 18.0
-    ti_fs = 16.0
-    na_fs = 20.0
+    CO_MAX = 24.0
+    CO_MIN = 16.0
+    TI_MAX = 20.0
+    TI_MIN = 14.0
+    NA_FS  = 28.0
 
-    cur_y = y0 + h - P - co_fs * 0.85
+    cur_y = y0 + h - P - CO_MAX * 0.85
 
+    # ── 企業名 ─────────────────────────────────────────────────────────
     if company:
         c.setFillColor(black)
         if "\n" in company:
-            # 手動改行：各行を個別にフィット
             for line in company.split("\n"):
                 if not line:
-                    cur_y -= co_fs * 0.6
+                    cur_y -= CO_MAX * 0.6
                     continue
-                fs = _fit_text(line, font, co_fs, inner_w, min_size=ti_fs)
+                fs = _fit_text(line, font, CO_MAX, inner_w, min_size=CO_MIN)
                 c.setFont(font, fs)
                 c.drawString(x0 + P, cur_y, line)
-                cur_y -= fs * 1.4
+                cur_y -= fs * 1.1
         else:
-            # 自動折り返し（14pt 未満になるなら 14pt で折り返し）
-            fs = _fit_text(company, font, co_fs, inner_w, min_size=ti_fs)
+            fs = _fit_text(company, font, CO_MAX, inner_w, min_size=CO_MIN)
             if stringWidth(company, font, fs) <= inner_w:
                 c.setFont(font, fs)
                 c.drawString(x0 + P, cur_y, company)
                 cur_y -= fs * 1.4
             else:
-                c.setFont(font, ti_fs)
+                c.setFont(font, CO_MIN)
                 text = company
                 while text:
-                    line, text = _split_line(text, font, ti_fs, inner_w)
+                    line, text = _split_line(text, font, CO_MIN, inner_w)
                     c.drawString(x0 + P, cur_y, line)
-                    cur_y -= ti_fs * 1.4
+                    cur_y -= CO_MIN * 1.1
     else:
-        cur_y -= co_fs * 1.4
+        cur_y -= CO_MAX * 1.4
 
+    # ── 役職名 ─────────────────────────────────────────────────────────
     if title:
-        fs = _fit_text(title, font, ti_fs, inner_w)
-        c.setFont(font, fs)
         c.setFillColor(black)
-        indent = stringWidth("　", font, fs)
-        c.drawString(x0 + P + indent, cur_y, title)
-    cur_y -= ti_fs * 1.4 + 4.0   # 役職と氏名の間に 4pt の余白
+        if "\n" in title:
+            for line in title.split("\n"):
+                if not line:
+                    cur_y -= TI_MAX * 0.6
+                    continue
+                fs = _fit_text(line, font, TI_MAX, inner_w, min_size=TI_MIN)
+                c.setFont(font, fs)
+                indent = stringWidth("　", font, fs)
+                c.drawString(x0 + P + indent, cur_y, line)
+                cur_y -= fs * 1.1
+        else:
+            tl = title.strip()
+            fs = _fit_text(tl, font, TI_MAX, inner_w, min_size=TI_MIN)
+            if stringWidth(tl, font, fs) <= inner_w:
+                c.setFont(font, fs)
+                indent = stringWidth("　", font, fs)
+                c.drawString(x0 + P + indent, cur_y, tl)
+                cur_y -= fs * 1.4
+            else:
+                c.setFont(font, TI_MIN)
+                text = tl
+                while text:
+                    line, text = _split_line(text, font, TI_MIN, inner_w)
+                    indent = stringWidth("　", font, TI_MIN)
+                    c.drawString(x0 + P + indent, cur_y, line)
+                    cur_y -= TI_MIN * 1.1
+    else:
+        cur_y -= TI_MAX * 1.4
 
+    cur_y -= 4.0  # 氏名との余白
+
+    # ── 氏名 ──────────────────────────────────────────────────────────
     if person:
-        fs = _fit_text(person, font, na_fs, inner_w)
+        fs = _fit_text(person, font, NA_FS, inner_w)
         c.setFont(font, fs)
         c.setFillColor(black)
         nw = stringWidth(person, font, fs)
@@ -424,24 +562,39 @@ def _draw_nametag(c, x0, y0, w, h, company, title, person, font: str = "MSPGothi
 # ── 簡易モード ──────────────────────────────────────────────────────────
 
 def _draw_simple(c, x0, y0, w, h, company, font: str = "MSPGothic"):
-    P       = 5.0 * mm          # 左右余白 5mm 固定
+    P       = 5.0 * mm
     inner_w = w - 2 * P
-    fs      = 16.0              # 基準フォントサイズ 16pt
+    co_fs   = 12.0
+    go_fs   = 11.0
+    line_h  = co_fs * 1.5
 
-    co_fs = _fit_text(company, font, fs, inner_w)
-    co_y  = y0 + h / 2 + fs * 0.75
+    # \n と自動折り返しで行分割（12ptで収まらなければ折り返し）
+    co_lines = []
+    for seg in (company or "").split("\n"):
+        if not seg:
+            continue
+        rem = seg
+        while rem:
+            line, rem = _split_line(rem, font, co_fs, inner_w)
+            co_lines.append(line)
 
-    c.setFont(font, co_fs)
+    if not co_lines:
+        return
+
+    gw     = stringWidth("御中", font, go_fs)
+    go_h   = go_fs * 1.5
+    # 事業所名ブロック＋御中を縦中央に配置
+    block_h = len(co_lines) * line_h + go_h
+    cur_y   = y0 + (h + block_h) / 2 - co_fs * 0.15
+
     c.setFillColor(black)
-    c.drawString(x0 + P, co_y, company)
-
-    go_fs = 14.0
-    gw    = stringWidth("御中", font, go_fs)
-    go_y  = y0 + h / 2 - fs * 0.75
+    c.setFont(font, co_fs)
+    for line in co_lines:
+        c.drawString(x0 + P, cur_y, line)
+        cur_y -= line_h
 
     c.setFont(font, go_fs)
-    c.setFillColor(black)
-    c.drawString(x0 + w - P - gw, go_y, "御中")
+    c.drawString(x0 + w - P - gw, cur_y, "御中")
 
 
 # ── プレートモード ──────────────────────────────────────────────────────
@@ -455,7 +608,7 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic"):
     if not company:
         return
 
-    P      = 8.0 * mm
+    P      = 4.0 * mm
     inner_w = w - 2 * P
     inner_h = h - 2 * P
 
