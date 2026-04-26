@@ -91,12 +91,19 @@ for _rom, _kat in [
     _R2K[_rom] = _kat
 
 
-def _romaji_to_katakana(text: str) -> str:
+_VOWELS = set("aiueo")
+_CONSONANTS = set("bcdfghjklmpqrstvwxyz")
+
+
+def _parse_romaji(s: str, strict: bool) -> str | None:
     """
-    ローマ字（ヘボン式）をカタカナに変換する。
-    変換できない文字はアルファベット読みで補完する。
+    ローマ字文字列をカタカナに変換する内部実装。
+
+    strict=True  : 語中で単独子音フォールバックが必要な場合は None を返す
+                   （全大文字のローマ字判定用）
+    strict=False : 変換できない文字はアルファベット読みで補完する
+                   （小文字混じりの確定ローマ字変換用）
     """
-    s = text.lower()
     result: list[str] = []
     i = 0
     while i < len(s):
@@ -104,17 +111,17 @@ def _romaji_to_katakana(text: str) -> str:
         nxt = s[i + 1] if i + 1 < len(s) else ""
 
         # 促音：同じ子音が連続（n を除く）
-        if c != "n" and c in "bcdfghjklmpqrstvwxyz" and nxt == c:
+        if c != "n" and c in _CONSONANTS and nxt == c:
             result.append("ッ")
             i += 1
             continue
 
-        # ん：n の後ろが母音でも y でもない、または語末
+        # ん
         if c == "n":
-            # ny + 非母音 → ニ（Sony → ソニ など）
+            # ny + 非母音 → ニ（Sony, Panasonic など）
             if nxt == "y":
                 after_y = s[i + 2] if i + 2 < len(s) else ""
-                if not after_y or after_y not in "aiueo":
+                if not after_y or after_y not in _VOWELS:
                     result.append("ニ")
                     i += 2
                     continue
@@ -124,7 +131,7 @@ def _romaji_to_katakana(text: str) -> str:
                 i += 1
                 continue
             # n + 子音 or 語末 → ン
-            if not nxt or nxt not in "aiueony":
+            if not nxt or nxt not in _VOWELS | {"n", "y"}:
                 result.append("ン")
                 i += 1
                 continue
@@ -133,15 +140,41 @@ def _romaji_to_katakana(text: str) -> str:
         for length in (3, 2, 1):
             chunk = s[i: i + length]
             if chunk in _R2K:
+                is_single_consonant = (length == 1 and chunk not in _VOWELS)
+                is_mid_word = (i + 1 < len(s))
+                if strict and is_single_consonant and is_mid_word:
+                    return None  # 語中で子音フォールバック → ローマ字として無効
                 result.append(_R2K[chunk])
                 i += length
                 break
         else:
-            # どうしても変換できない文字はアルファベット読みで補完
+            if strict:
+                return None
             result.append(_ALPHA_KANA.get(c.upper(), c))
             i += 1
 
-    return "".join(result)
+    kana = "".join(result)
+    # ン・ッ で始まる結果はローマ字として不自然（NTT → ンット など）
+    if strict and kana and kana[0] in "ンッ":
+        return None
+    return kana
+
+
+def _romaji_to_katakana(text: str) -> str:
+    """小文字混じりのローマ字をカタカナに変換する（フォールバックあり）"""
+    return _parse_romaji(text.lower(), strict=False)
+
+
+def _try_as_romaji(word: str) -> str | None:
+    """
+    全大文字の単語をローマ字として変換を試みる。
+    自然に変換できない場合は None を返す。
+    条件: 4文字以上 かつ 母音(AIUEO)を含む
+    """
+    upper_vowels = set("AIUEO")
+    if len(word) < 4 or not any(c in upper_vowels for c in word):
+        return None
+    return _parse_romaji(word.lower(), strict=True)
 
 
 _kakasi = None
@@ -169,14 +202,24 @@ def strip_legal_name(text: str) -> str:
 def _alpha_seq_to_kana(text: str) -> str:
     """
     文字列中のASCIIアルファベット連続部分をカタカナに変換する。
-    - 全大文字（IBM, NTT など）→ 1文字ずつアルファベット読み
-    - 小文字を含む（Toyota, Sony など）→ ローマ字読み
+
+    判別ルール:
+    - 小文字を含む → ローマ字読み（Toyota → トヨタ）
+    - 全大文字 かつ 4文字以上 かつ 母音あり → ローマ字変換を試みる
+      - 変換成功（自然なローマ字）→ ローマ字読み（TOYOTA → トヨタ）
+      - 変換失敗（語中に解釈不能な子音など）→ 頭字語読み（IBM → アイビーエム）
+    - 全大文字 かつ 3文字以下 or 母音なし → 頭字語読み（NTT → エヌティーティー）
     """
     def _repl(m: re.Match) -> str:
         word = m.group(0)
-        if word.isupper():
-            return "".join(_ALPHA_KANA.get(c, c) for c in word)
-        return _romaji_to_katakana(word)
+        if not word.isupper():
+            return _romaji_to_katakana(word)
+        # 全大文字：ローマ字変換を試みる
+        kana = _try_as_romaji(word)
+        if kana:
+            return kana
+        # フォールバック：頭字語読み
+        return "".join(_ALPHA_KANA.get(c, c) for c in word)
     return re.sub(r"[A-Za-z]+", _repl, text)
 
 
