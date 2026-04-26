@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QLineEdit,
     QDialogButtonBox, QPlainTextEdit, QStyledItemDelegate,
     QAbstractItemDelegate, QApplication, QStyle, QStyleOptionButton,
+    QCheckBox, QWidget,
 )
 from PyQt6.QtCore import Qt, QEvent, QRect, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -512,19 +513,12 @@ class DirectLabelDialog(QDialog):
             "QTableWidget::item:hover {"
             "  background-color: #BBDEFB; color: black;"
             "}"
-            "QTableWidget::indicator { width: 15px; height: 15px; }"
-            "QTableWidget::indicator:unchecked {"
-            "  border: 2px solid #94A3B8; border-radius: 3px; background: white; }"
-            "QTableWidget::indicator:checked {"
-            "  border: 2px solid #1565C0; border-radius: 3px; background: #1565C0; }"
-            "QTableWidget::indicator:unchecked:hover { border-color: #1565C0; }"
         )
         self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setItemDelegateForColumn(self.COL_COMPANY, _MultilineDelegate(self.table))
         self.table.setItemDelegateForColumn(self.COL_TITLE,   _MultilineDelegate(self.table))
-        self.table.itemClicked.connect(self._on_item_clicked)
         self.table.installEventFilter(self)
         root.addWidget(self.table)
 
@@ -578,37 +572,45 @@ class DirectLabelDialog(QDialog):
         foot.addWidget(self._btn_export)
         root.addLayout(foot)
 
-    def _on_item_clicked(self, item):
-        if item.column() != self.COL_CHK:
+    def _get_row_chk(self, row: int) -> QCheckBox | None:
+        w = self.table.cellWidget(row, self.COL_CHK)
+        return w.findChild(QCheckBox) if w else None
+
+    def _on_chk_clicked(self):
+        sender = self.sender()
+        clicked_row = next(
+            (r for r in range(self.table.rowCount())
+             if self._get_row_chk(r) is sender),
+            None,
+        )
+        if clicked_row is None:
             return
-        row = item.row()
         modifiers = QApplication.keyboardModifiers()
         if (modifiers & Qt.KeyboardModifier.ShiftModifier) and self._last_chk_row is not None:
-            new_state = item.checkState()
-            r0, r1 = sorted([self._last_chk_row, row])
+            new_checked = sender.isChecked()
+            r0, r1 = sorted([self._last_chk_row, clicked_row])
             for r in range(r0, r1 + 1):
-                it = self.table.item(r, self.COL_CHK)
-                if it:
-                    it.setCheckState(new_state)
-        self._last_chk_row = row
+                c = self._get_row_chk(r)
+                if c:
+                    c.blockSignals(True)
+                    c.setChecked(new_checked)
+                    c.blockSignals(False)
+        self._last_chk_row = clicked_row
         self._update_count()
 
     def _on_header_toggled(self, checked: bool):
-        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
         self._last_chk_row = None
         for row in range(self.table.rowCount()):
-            item = self.table.item(row, self.COL_CHK)
-            if item:
-                item.setCheckState(state)
+            c = self._get_row_chk(row)
+            if c:
+                c.blockSignals(True)
+                c.setChecked(checked)
+                c.blockSignals(False)
         self._update_count()
 
     def _get_checked_rows(self) -> list[int]:
-        rows = []
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, self.COL_CHK)
-            if item and item.checkState() == Qt.CheckState.Checked:
-                rows.append(row)
-        return rows
+        return [r for r in range(self.table.rowCount())
+                if (c := self._get_row_chk(r)) and c.isChecked()]
 
     def _fill_postal_codes(self):
         from app.utils.postal_lookup import lookup_postal_code
@@ -756,13 +758,15 @@ class DirectLabelDialog(QDialog):
     def _add_row(self, values: list[str] | None = None):
         row = self.table.rowCount()
         self.table.insertRow(row)
-        # チェックボックス列（デフォルトはチェック済み）
-        # setItem でテーブルに登録してから setCheckState を呼ぶ必要がある
-        chk = QTableWidgetItem()
-        chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-        self.table.setItem(row, self.COL_CHK, chk)
-        chk.setCheckState(Qt.CheckState.Checked)
-        # データ列（values は COL_COMPANY 以降に対応）
+        chk = QCheckBox()
+        chk.setChecked(True)
+        chk.clicked.connect(self._on_chk_clicked)
+        cell = QWidget()
+        lay = QHBoxLayout(cell)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(chk)
+        self.table.setCellWidget(row, self.COL_CHK, cell)
         for offset, col in enumerate(range(self.COL_COMPANY, len(self._COLS))):
             item = QTableWidgetItem(values[offset] if values and offset < len(values) else "")
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
