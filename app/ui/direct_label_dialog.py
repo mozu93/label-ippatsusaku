@@ -757,10 +757,11 @@ class DirectLabelDialog(QDialog):
         row = self.table.rowCount()
         self.table.insertRow(row)
         # チェックボックス列（デフォルトはチェック済み）
+        # setItem でテーブルに登録してから setCheckState を呼ぶ必要がある
         chk = QTableWidgetItem()
         chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-        chk.setCheckState(Qt.CheckState.Checked)
         self.table.setItem(row, self.COL_CHK, chk)
+        chk.setCheckState(Qt.CheckState.Checked)
         # データ列（values は COL_COMPANY 以降に対応）
         for offset, col in enumerate(range(self.COL_COMPANY, len(self._COLS))):
             item = QTableWidgetItem(values[offset] if values and offset < len(values) else "")
