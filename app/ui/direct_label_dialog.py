@@ -12,9 +12,9 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFileDialog,
     QComboBox, QLineEdit,
     QDialogButtonBox, QPlainTextEdit, QStyledItemDelegate,
-    QAbstractItemDelegate,
+    QAbstractItemDelegate, QApplication, QStyle, QStyleOptionButton,
 )
-from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtCore import Qt, QEvent, QRect, pyqtSignal
 from PyQt6.QtGui import QFont
 
 from app.database.models import get_session, LabelBatch, LabelEntry
@@ -50,6 +50,46 @@ _BTN_DANGER = (
     "padding: 0 16px; font-size: 12px; min-height: 28px; }"
     "QPushButton:hover { background: #B71C1C; }"
 )
+
+
+class _CheckableHeader(QHeaderView):
+    """列0にチェックボックスを描画するカスタムヘッダー"""
+    toggled = pyqtSignal(bool)
+
+    def __init__(self, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._checked = True
+        self.setSectionsClickable(True)
+
+    def set_checked(self, checked: bool):
+        self._checked = checked
+        self.viewport().update()
+
+    def paintSection(self, painter, rect, logical_index):
+        painter.save()
+        super().paintSection(painter, rect, logical_index)
+        painter.restore()
+        if logical_index == 0:
+            opt = QStyleOptionButton()
+            cb = 14
+            opt.rect = QRect(
+                rect.x() + (rect.width() - cb) // 2,
+                rect.y() + (rect.height() - cb) // 2,
+                cb, cb,
+            )
+            opt.state = QStyle.StateFlag.State_Enabled | QStyle.StateFlag.State_Active
+            opt.state |= (QStyle.StateFlag.State_On if self._checked
+                          else QStyle.StateFlag.State_Off)
+            self.style().drawControl(QStyle.ControlElement.CE_CheckBox, opt, painter)
+
+    def mousePressEvent(self, event):
+        idx = self.logicalIndexAt(event.pos())
+        if idx == 0:
+            self._checked = not self._checked
+            self.viewport().update()
+            self.toggled.emit(self._checked)
+        else:
+            super().mousePressEvent(event)
 
 
 class _MultilineDelegate(QStyledItemDelegate):
@@ -238,7 +278,16 @@ class DirectLabelDialog(QDialog):
       6列: 企業名, 郵便番号, 住所1, 住所2, 肩書, 氏名
     """
 
+    COL_CHK     = 0
+    COL_COMPANY = 1
+    COL_KANA    = 2
+    COL_TITLE   = 3
+    COL_PERSON  = 4
+    COL_POSTAL  = 5
+    COL_ADDR    = 6
+
     _COLS = [
+        ("",            32,  QHeaderView.ResizeMode.Fixed),
         ("事業所名",    200, QHeaderView.ResizeMode.Stretch),
         ("フリガナ",    130, QHeaderView.ResizeMode.Interactive),
         ("所属・役職名", 130, QHeaderView.ResizeMode.Interactive),
@@ -250,9 +299,10 @@ class DirectLabelDialog(QDialog):
     def __init__(self, batch_id: int | None = None, parent=None):
         super().__init__(parent)
         self._batch_id = batch_id
+        self._last_chk_row: int | None = None
         self.setWindowTitle("宛名ラベル 新規作成" if batch_id is None else "宛名ラベル 編集")
-        self.setMinimumSize(900, 580)
-        self.resize(980, 640)
+        self.setMinimumSize(940, 580)
+        self.resize(1020, 640)
         self._init_ui()
         if batch_id is not None:
             self._load_batch(batch_id)
@@ -440,7 +490,12 @@ class DirectLabelDialog(QDialog):
         root.addLayout(ops)
 
         self.table = QTableWidget(0, len(self._COLS))
-        self.table.setHorizontalHeaderLabels([c[0] for c in self._COLS])
+        self._chk_header = _CheckableHeader(self.table)
+        self._chk_header.toggled.connect(self._on_header_toggled)
+        self.table.setHorizontalHeader(self._chk_header)
+        self._chk_header.setStretchLastSection(False)
+        labels = [c[0] for c in self._COLS]
+        self.table.setHorizontalHeaderLabels(labels)
         hdr = self.table.horizontalHeader()
         for i, (_, width, mode) in enumerate(self._COLS):
             hdr.setSectionResizeMode(i, mode)
@@ -457,12 +512,19 @@ class DirectLabelDialog(QDialog):
             "QTableWidget::item:hover {"
             "  background-color: #BBDEFB; color: black;"
             "}"
+            "QTableWidget::indicator { width: 15px; height: 15px; }"
+            "QTableWidget::indicator:unchecked {"
+            "  border: 2px solid #94A3B8; border-radius: 3px; background: white; }"
+            "QTableWidget::indicator:checked {"
+            "  border: 2px solid #1565C0; border-radius: 3px; background: #1565C0; }"
+            "QTableWidget::indicator:unchecked:hover { border-color: #1565C0; }"
         )
         self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setItemDelegateForColumn(0, _MultilineDelegate(self.table))
-        self.table.setItemDelegateForColumn(2, _MultilineDelegate(self.table))
+        self.table.setItemDelegateForColumn(self.COL_COMPANY, _MultilineDelegate(self.table))
+        self.table.setItemDelegateForColumn(self.COL_TITLE,   _MultilineDelegate(self.table))
+        self.table.itemClicked.connect(self._on_item_clicked)
         self.table.installEventFilter(self)
         root.addWidget(self.table)
 
@@ -516,14 +578,46 @@ class DirectLabelDialog(QDialog):
         foot.addWidget(self._btn_export)
         root.addLayout(foot)
 
+    def _on_item_clicked(self, item):
+        if item.column() != self.COL_CHK:
+            return
+        row = item.row()
+        modifiers = QApplication.keyboardModifiers()
+        if (modifiers & Qt.KeyboardModifier.ShiftModifier) and self._last_chk_row is not None:
+            new_state = item.checkState()
+            r0, r1 = sorted([self._last_chk_row, row])
+            for r in range(r0, r1 + 1):
+                it = self.table.item(r, self.COL_CHK)
+                if it:
+                    it.setCheckState(new_state)
+        self._last_chk_row = row
+        self._update_count()
+
+    def _on_header_toggled(self, checked: bool):
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        self._last_chk_row = None
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, self.COL_CHK)
+            if item:
+                item.setCheckState(state)
+        self._update_count()
+
+    def _get_checked_rows(self) -> list[int]:
+        rows = []
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, self.COL_CHK)
+            if item and item.checkState() == Qt.CheckState.Checked:
+                rows.append(row)
+        return rows
+
     def _fill_postal_codes(self):
         from app.utils.postal_lookup import lookup_postal_code
         from PyQt6.QtWidgets import QApplication
 
         targets = [
             row for row in range(self.table.rowCount())
-            if not (self.table.item(row, 4) or QTableWidgetItem()).text().strip()
-            and (self.table.item(row, 5) or QTableWidgetItem()).text().strip()
+            if not (self.table.item(row, self.COL_POSTAL) or QTableWidgetItem()).text().strip()
+            and (self.table.item(row, self.COL_ADDR) or QTableWidgetItem()).text().strip()
         ]
         if not targets:
             QMessageBox.information(self, "郵便番号補完",
@@ -534,11 +628,11 @@ class DirectLabelDialog(QDialog):
         self._btn_export.setEnabled(False)
         filled = skipped = 0
         for row in targets:
-            address = (self.table.item(row, 5) or QTableWidgetItem()).text().strip()
+            address = (self.table.item(row, self.COL_ADDR) or QTableWidgetItem()).text().strip()
             QApplication.processEvents()
             zipcode = lookup_postal_code(address)
             if zipcode:
-                item = self.table.item(row, 4)
+                item = self.table.item(row, self.COL_POSTAL)
                 if item:
                     item.setText(zipcode)
                 filled += 1
@@ -564,8 +658,8 @@ class DirectLabelDialog(QDialog):
 
         targets = [
             row for row in range(self.table.rowCount())
-            if not (self.table.item(row, 1) or QTableWidgetItem()).text().strip()
-            and (self.table.item(row, 0) or QTableWidgetItem()).text().strip()
+            if not (self.table.item(row, self.COL_KANA) or QTableWidgetItem()).text().strip()
+            and (self.table.item(row, self.COL_COMPANY) or QTableWidgetItem()).text().strip()
         ]
         if not targets:
             QMessageBox.information(self, "フリガナ補完",
@@ -575,10 +669,10 @@ class DirectLabelDialog(QDialog):
 
         filled = 0
         for row in targets:
-            company = (self.table.item(row, 0) or QTableWidgetItem()).text().strip()
+            company = (self.table.item(row, self.COL_COMPANY) or QTableWidgetItem()).text().strip()
             kana = get_company_kana(company)
             if kana:
-                item = self.table.item(row, 1)
+                item = self.table.item(row, self.COL_KANA)
                 if item:
                     item.setText(kana)
                 filled += 1
@@ -610,6 +704,7 @@ class DirectLabelDialog(QDialog):
             session.close()
 
         self.table.setRowCount(0)
+        self._last_chk_row = None
         for e in entries:
             addr = e.address1 or ""
             if e.address2:
@@ -661,8 +756,14 @@ class DirectLabelDialog(QDialog):
     def _add_row(self, values: list[str] | None = None):
         row = self.table.rowCount()
         self.table.insertRow(row)
-        for col in range(len(self._COLS)):
-            item = QTableWidgetItem(values[col] if values and col < len(values) else "")
+        # チェックボックス列（デフォルトはチェック済み）
+        chk = QTableWidgetItem()
+        chk.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+        chk.setCheckState(Qt.CheckState.Checked)
+        self.table.setItem(row, self.COL_CHK, chk)
+        # データ列（values は COL_COMPANY 以降に対応）
+        for offset, col in enumerate(range(self.COL_COMPANY, len(self._COLS))):
+            item = QTableWidgetItem(values[offset] if values and offset < len(values) else "")
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, col, item)
         self._update_count()
@@ -674,7 +775,12 @@ class DirectLabelDialog(QDialog):
         self._update_count()
 
     def _update_count(self):
-        self._count_lbl.setText(f"{self.table.rowCount()} 件")
+        total   = self.table.rowCount()
+        checked = len(self._get_checked_rows())
+        if checked == total:
+            self._count_lbl.setText(f"{total} 件")
+        else:
+            self._count_lbl.setText(f"{total} 件（{checked} 件を出力対象）")
 
     def _fill_rows(self, direct_rows):
         if not direct_rows:
@@ -693,6 +799,7 @@ class DirectLabelDialog(QDialog):
                 return
             if reply == QMessageBox.StandardButton.Yes:
                 self.table.setRowCount(0)
+                self._last_chk_row = None
 
         for dr in direct_rows:
             self._add_row([
@@ -809,21 +916,28 @@ class DirectLabelDialog(QDialog):
         dest_dir = os.path.dirname(pdf_path)
         mode     = self._current_mode()
 
+        checked_rows = self._get_checked_rows()
+        if not checked_rows:
+            QMessageBox.warning(self, "出力対象なし",
+                                "チェックされたデータがありません。\n"
+                                "出力したい行にチェックを入れてください。")
+            return
+
         entry_dicts = []
-        for row in range(self.table.rowCount()):
+        for sort_idx, row in enumerate(checked_rows):
             def _cell(col, _row=row):
                 item = self.table.item(_row, col)
                 return item.text().strip() if item else ""
             entry_dicts.append({
-                "sort_order":   row,
+                "sort_order":   sort_idx,
                 "client_id":    None,
-                "company_name": _cell(0),
-                "company_kana": _cell(1),
-                "postal_code":  _cell(4),
-                "address1":     _cell(5),
+                "company_name": _cell(self.COL_COMPANY),
+                "company_kana": _cell(self.COL_KANA),
+                "postal_code":  _cell(self.COL_POSTAL),
+                "address1":     _cell(self.COL_ADDR),
                 "address2":     "",
-                "title":        _cell(2),
-                "person_name":  _cell(3),
+                "title":        _cell(self.COL_TITLE),
+                "person_name":  _cell(self.COL_PERSON),
                 "entry_mode":   "inherit",
             })
 
