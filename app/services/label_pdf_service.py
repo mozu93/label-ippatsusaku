@@ -205,12 +205,20 @@ def generate_label_pdf(
         mode = batch_mode if entry.entry_mode == "inherit" else entry.entry_mode
 
         # a4_4split: row 0・2（上から1・3番）を 180° 回転して印刷
-        if layout_key == "a4_4split" and row % 2 == 0:
-            c.saveState()
-            c.translate(x0 + lw / 2, y0 + lh / 2)
-            c.rotate(180)
-            _draw_label(c, entry, -lw / 2, -lh / 2, lw, lh, mode, font, barcode_enabled)
-            c.restoreState()
+        # row 0（1番目）と row 3（4番目）は印字位置を 7.5mm ずらす
+        if layout_key == "a4_4split":
+            _PLATE_SHIFT = 7.5 * mm
+            plate_offset = -_PLATE_SHIFT if row in (0, 3) else 0.0
+            if row % 2 == 0:
+                c.saveState()
+                c.translate(x0 + lw / 2, y0 + lh / 2)
+                c.rotate(180)
+                _draw_label(c, entry, -lw / 2, -lh / 2, lw, lh, mode, font, barcode_enabled,
+                            plate_y_offset=plate_offset)
+                c.restoreState()
+            else:
+                _draw_label(c, entry, x0, y0, lw, lh, mode, font, barcode_enabled,
+                            plate_y_offset=plate_offset)
         else:
             _draw_label(c, entry, x0, y0, lw, lh, mode, font, barcode_enabled)
         slot += 1
@@ -248,7 +256,8 @@ def _split_line(text: str, font: str, fs: float, max_w: float) -> tuple[str, str
 
 
 def _draw_label(c, entry, x0: float, y0: float, w: float, h: float, mode: str,
-                font: str = "MSPGothic", barcode_enabled: bool = False):
+                font: str = "MSPGothic", barcode_enabled: bool = False,
+                plate_y_offset: float = 0.0):
     c.saveState()
 
     company      = entry.company_name or ""
@@ -267,7 +276,7 @@ def _draw_label(c, entry, x0: float, y0: float, w: float, h: float, mode: str,
     elif mode == "nametag":
         _draw_nametag(c, x0, y0, w, h, company, title, person, font)
     elif mode == "split4":
-        _draw_split4(c, x0, y0, w, h, company, font)
+        _draw_split4(c, x0, y0, w, h, company, font, plate_y_offset)
     else:
         _draw_normal(c, x0, y0, w, h, company, postal, addr1, addr2, title, person, font,
                      barcode_enabled, barcode_addr)
@@ -639,11 +648,13 @@ def _draw_simple(c, x0, y0, w, h, company, font: str = "MSPGothic"):
 
 # ── プレートモード ──────────────────────────────────────────────────────
 
-def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic"):
+def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
+                 y_offset: float = 0.0):
     """
     プレートモード：ユーザーが入力した改行（\\n）で区切られた各行を
     均等割付・上下中央で描画。自動折り返しなし。
     row 0・2 の 180° 回転は generate_label_pdf 側で処理する。
+    y_offset: start_y への加算値（pt）。row 0/3 の印字位置微調整に使用。
     """
     if not company:
         return
@@ -669,7 +680,7 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic"):
     line_h  = fs * LINE_H
 
     # 上下中央：テキストブロック全体の視覚中心をラベル中央に合わせる
-    start_y = y0 + h / 2 + (n - 1) * line_h / 2 - fs * 0.3
+    start_y = y0 + h / 2 + (n - 1) * line_h / 2 - fs * 0.3 + y_offset
 
     bold = n > 1
     c.setFont(font, fs)
