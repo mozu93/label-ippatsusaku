@@ -33,6 +33,7 @@ COL_OPS  = 6
 class _CheckableHeader(QHeaderView):
     """列0にチェックボックスを描画するカスタムヘッダー"""
     toggled = pyqtSignal(bool)
+    sort_requested = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(Qt.Orientation.Horizontal, parent)
@@ -68,10 +69,13 @@ class _CheckableHeader(QHeaderView):
             self.toggled.emit(self._checked)
         else:
             super().mousePressEvent(event)
+            self.sort_requested.emit(idx)
 
 
 class LabelListWidget(QWidget):
     """宛名ラベル一覧"""
+
+    _BASE_HEADERS = ["", "ID", "ラベル名", "件数", "モード", "作成日時", "操作"]
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -79,6 +83,8 @@ class LabelListWidget(QWidget):
         self._filtered: list[LabelBatch] = []
         self._filtered_counts: dict = {}
         self._last_chk_row: int | None = None
+        self._sort_col: int | None = None
+        self._sort_asc: bool = True
         self._init_ui()
         self._load()
 
@@ -112,8 +118,8 @@ class LabelListWidget(QWidget):
 
         # ── 説明テキスト ────────────────────────────────────────────
         desc = QLabel(
-            "企業名・住所・所属・役職・氏名を貼り付けてラベルを作成します。"
-            "取引先マスタへの登録は不要です。郵便番号は住所から自動補完できます（インターネット接続必要）。"
+            "事業所名、所属・役職名、氏名、郵便番号、住所を貼り付けるか、"
+            "CSVを読み込むと様々なラベルを作成できます。"
         )
         desc.setStyleSheet(f"color: {C_TEXT_SUB}; font-size: 12px;")
         desc.setWordWrap(True)
@@ -137,6 +143,7 @@ class LabelListWidget(QWidget):
         )
         self._chk_header = _CheckableHeader(self.table)
         self._chk_header.toggled.connect(self._on_header_toggled)
+        self._chk_header.sort_requested.connect(self._on_sort)
         self.table.setHorizontalHeader(self._chk_header)
         self._chk_header.setStretchLastSection(False)
 
@@ -194,9 +201,57 @@ class LabelListWidget(QWidget):
         self._chk_header.set_checked(False)
         self._filtered_counts = counts
         self._filtered = list(self._batches)
+        self._sort_col = None
+        self._sort_asc = True
+        self._update_sort_headers()
         self._pagination.reset()
         self._pagination.set_total(len(self._filtered))
         self._render_page()
+
+    def _on_sort(self, col: int):
+        if col in (COL_CHK, COL_OPS):
+            return
+        if self._sort_col == col:
+            self._sort_asc = not self._sort_asc
+        else:
+            self._sort_col = col
+            self._sort_asc = True
+        _MODE_LABEL = {
+            "normal":    "宛名(氏名あり)",
+            "no_person": "宛名(氏名なし)",
+            "simple":    "事業所名のみ",
+            "nametag":   "名札",
+            "split4":    "卓上プレート",
+        }
+        if col == COL_ID:
+            key = lambda b: b.id
+        elif col == COL_NAME:
+            key = lambda b: (b.batch_name or "").lower()
+        elif col == COL_CNT:
+            key = lambda b: self._filtered_counts.get(b.id, 0)
+        elif col == COL_MODE:
+            key = lambda b: _MODE_LABEL.get(b.label_mode, b.label_mode or "")
+        elif col == COL_DATE:
+            key = lambda b: b.created_at or datetime.min
+        else:
+            return
+        self._filtered.sort(key=key, reverse=not self._sort_asc)
+        self._update_sort_headers()
+        self._pagination.reset()
+        self._pagination.set_total(len(self._filtered))
+        self._render_page()
+
+    def _update_sort_headers(self):
+        for col, base in enumerate(self._BASE_HEADERS):
+            if col == self._sort_col:
+                label = base + (" ▲" if self._sort_asc else " ▼")
+            else:
+                label = base
+            item = self.table.horizontalHeaderItem(col)
+            if item:
+                item.setText(label)
+            else:
+                self.table.setHorizontalHeaderItem(col, QTableWidgetItem(label))
 
     def _render_page(self):
         start, end = self._pagination.slice_range()
