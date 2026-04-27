@@ -12,6 +12,7 @@ LABEL_LAYOUTS に仕様を追加するだけで新しいサイズを登録でき
   "a4_4split"   : A4 横長4分割 A4 1列×4行  210×74.25mm（プレートモード用）
 """
 from dataclasses import dataclass
+import re
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -21,6 +22,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.pdfmetrics import stringWidth
 import os
+
+from app.utils.customer_barcode import build_barcode_chars, draw_barcode, barcode_height
 
 # ── フォント登録 ────────────────────────────────────────────────────────
 _FONT_FILES = {
@@ -152,11 +155,12 @@ def _label_origin(col: int, row: int, layout: LabelLayout) -> tuple[float, float
 # ══════════════════════════════════════════════════════════════════════
 
 def generate_label_pdf(
-    entries:     list,
-    output_path: str,
-    batch_mode:  str = "normal",
-    layout_key:  str = DEFAULT_LAYOUT_KEY,
-    font_key:    str = DEFAULT_FONT_KEY,
+    entries:         list,
+    output_path:     str,
+    batch_mode:      str  = "normal",
+    layout_key:      str  = DEFAULT_LAYOUT_KEY,
+    font_key:        str  = DEFAULT_FONT_KEY,
+    barcode_enabled: bool = False,
 ) -> str:
     """
     entries     : LabelEntry ORM オブジェクトのリスト
@@ -205,10 +209,10 @@ def generate_label_pdf(
             c.saveState()
             c.translate(x0 + lw / 2, y0 + lh / 2)
             c.rotate(180)
-            _draw_label(c, entry, -lw / 2, -lh / 2, lw, lh, mode, font)
+            _draw_label(c, entry, -lw / 2, -lh / 2, lw, lh, mode, font, barcode_enabled)
             c.restoreState()
         else:
-            _draw_label(c, entry, x0, y0, lw, lh, mode, font)
+            _draw_label(c, entry, x0, y0, lw, lh, mode, font, barcode_enabled)
         slot += 1
 
     c.save()
@@ -244,26 +248,29 @@ def _split_line(text: str, font: str, fs: float, max_w: float) -> tuple[str, str
 
 
 def _draw_label(c, entry, x0: float, y0: float, w: float, h: float, mode: str,
-                font: str = "MSPGothic"):
+                font: str = "MSPGothic", barcode_enabled: bool = False):
     c.saveState()
 
-    company = entry.company_name or ""
-    postal  = entry.postal_code  or ""
-    addr1   = entry.address1     or ""
-    addr2   = entry.address2     or ""
-    title   = entry.title        or ""
-    person  = entry.person_name  or ""
+    company      = entry.company_name or ""
+    postal       = entry.postal_code  or ""
+    addr1        = entry.address1     or ""
+    addr2        = entry.address2     or ""
+    title        = entry.title        or ""
+    person       = entry.person_name  or ""
+    barcode_addr = getattr(entry, 'barcode_address', '') or ""
 
     if mode == "simple":
         _draw_simple(c, x0, y0, w, h, company, font)
     elif mode == "no_person":
-        _draw_no_person(c, x0, y0, w, h, company, postal, addr1, addr2, font)
+        _draw_no_person(c, x0, y0, w, h, company, postal, addr1, addr2, font,
+                        barcode_enabled, barcode_addr)
     elif mode == "nametag":
         _draw_nametag(c, x0, y0, w, h, company, title, person, font)
     elif mode == "split4":
         _draw_split4(c, x0, y0, w, h, company, font)
     else:
-        _draw_normal(c, x0, y0, w, h, company, postal, addr1, addr2, title, person, font)
+        _draw_normal(c, x0, y0, w, h, company, postal, addr1, addr2, title, person, font,
+                     barcode_enabled, barcode_addr)
 
     c.restoreState()
 
@@ -272,14 +279,22 @@ def _draw_label(c, entry, x0: float, y0: float, w: float, h: float, mode: str,
 
 def _draw_normal(c, x0, y0, w, h,
                  company, postal, addr1, addr2, title, person,
-                 font: str = "MSPGothic"):
+                 font: str = "MSPGothic",
+                 barcode_enabled: bool = False,
+                 barcode_addr: str = ""):
     """
     上から順に描画: 郵便番号 → 住所 → 事業所名（インデント）
                    → 所属・役職（インデント、複数行）→ 氏名 様（さらにインデント・大きめ）
     ラベルサイズに応じてフォントサイズを自動スケール。
     基準: ラベル高 53mm (generic_2x5) のサイズを 1.0 とする。
     """
-    scale  = min(w / (92.5 * mm), h / (53.0 * mm))
+    # バーコード用下部スペース
+    _BC_MARGIN = 1.5 * mm
+    _BC_TOP_MARGIN = 1.0 * mm
+    use_barcode = barcode_enabled and bool(postal) and bool(barcode_addr)
+    bc_reserve = (barcode_height() + _BC_MARGIN + _BC_TOP_MARGIN) if use_barcode else 0.0
+
+    scale  = min(w / (92.5 * mm), (h - bc_reserve) / (53.0 * mm))
     P      = max(2.0 * mm, 3.0 * mm * scale)    # 左右余白
 
     inner_w = w - 2 * P
@@ -293,7 +308,8 @@ def _draw_normal(c, x0, y0, w, h,
 
     LH = addr_fs * 1.6                           # 行高 = フォントサイズ × 1.6
 
-    cur_y = y0 + h - P - addr_fs * 0.85
+    effective_h = h - bc_reserve
+    cur_y = y0 + effective_h - P - addr_fs * 0.85
 
     # ── 郵便番号 ─────────────────────────────────────────────────────
     c.setFont(font, addr_fs)
@@ -378,17 +394,32 @@ def _draw_normal(c, x0, y0, w, h,
         gw = stringWidth("御中", font, gochu_fs)
         c.drawString(x0 + w - P - gw, name_y, "御中")
 
+    # ── バーコード描画 ────────────────────────────────────────────────
+    if use_barcode:
+        try:
+            chars = build_barcode_chars(re.sub(r'\D', '', postal), barcode_addr)
+            draw_barcode(c, x0 + P, y0 + _BC_MARGIN, chars)
+        except Exception:
+            pass
+
 
 # ── 氏名なしモード ─────────────────────────────────────────────────────
 
 def _draw_no_person(c, x0, y0, w, h, company, postal, addr1, addr2,
-                    font: str = "MSPGothic"):
+                    font: str = "MSPGothic",
+                    barcode_enabled: bool = False,
+                    barcode_addr: str = ""):
     """
     宛名ラベル（氏名なし）：事業所名の末尾に半角スペース＋御中を同行出力する。
     手動改行（\\n）を優先し、各セグメントを幅に応じてさらに自動折り返す。
     御中は最終行の末尾に付く。
     """
-    scale    = min(w / (92.5 * mm), h / (53.0 * mm))
+    _BC_MARGIN = 1.5 * mm
+    _BC_TOP_MARGIN = 1.0 * mm
+    use_barcode = barcode_enabled and bool(postal) and bool(barcode_addr)
+    bc_reserve = (barcode_height() + _BC_MARGIN + _BC_TOP_MARGIN) if use_barcode else 0.0
+
+    scale    = min(w / (92.5 * mm), (h - bc_reserve) / (53.0 * mm))
     P        = max(2.0 * mm, 3.0 * mm * scale)
     inner_w  = w - 2 * P
     indent1  = P + 2.5 * mm * scale
@@ -398,7 +429,8 @@ def _draw_no_person(c, x0, y0, w, h, company, postal, addr1, addr2,
     co_max_fs = 11.0
     LH        = addr_fs * 1.6
 
-    cur_y = y0 + h - P - addr_fs * 0.85
+    effective_h = h - bc_reserve
+    cur_y = y0 + effective_h - P - addr_fs * 0.85
 
     # 郵便番号
     c.setFont(font, addr_fs)
@@ -468,6 +500,14 @@ def _draw_no_person(c, x0, y0, w, h, company, postal, addr1, addr2,
         c.drawString(x0 + indent1, cur_y, line)
         if i < len(all_lines) - 1:
             cur_y -= LH * 0.9
+
+    # ── バーコード描画 ────────────────────────────────────────────────
+    if use_barcode:
+        try:
+            chars = build_barcode_chars(re.sub(r'\D', '', postal), barcode_addr)
+            draw_barcode(c, x0 + P, y0 + _BC_MARGIN, chars)
+        except Exception:
+            pass
 
 
 # ── 名札モード ──────────────────────────────────────────────────────────
