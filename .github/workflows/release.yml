@@ -1,0 +1,60 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Get version
+        id: ver
+        run: |
+          $v = python -c "from app.version import __version__; print(__version__)"
+          "VERSION=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build with PyInstaller
+        run: pyinstaller label_ippatsusaku.spec --noconfirm
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            /DAppVersion=${{ steps.ver.outputs.VERSION }} `
+            installer\setup.iss
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "ラベル一発作成 v${{ steps.ver.outputs.VERSION }}"
+          body: |
+            ## ラベル一発作成 v${{ steps.ver.outputs.VERSION }}
+
+            ### インストール方法
+            1. 下記の `LabelIppatsusaku_Setup_${{ steps.ver.outputs.VERSION }}.exe` をダウンロード
+            2. ダウンロードしたファイルをダブルクリックして実行
+            3. 画面の指示に従ってインストール
+
+            ※ 管理者権限は不要です。
+          files: installer_output/LabelIppatsusaku_Setup_${{ steps.ver.outputs.VERSION }}.exe
+          draft: false
+          prerelease: false

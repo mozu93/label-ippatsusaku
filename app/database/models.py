@@ -9,7 +9,10 @@ import os, sys
 
 def _get_db_path() -> str:
     if getattr(sys, "frozen", False):
-        base = os.path.dirname(sys.executable)
+        # インストール済み実行時は APPDATA に保存（Program Files は書き込み不可）
+        appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
+        base = os.path.join(appdata, "LabelIppatsusaku")
+        os.makedirs(base, exist_ok=True)
     else:
         base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(base, "label_ippatsusaku.db")

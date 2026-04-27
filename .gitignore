@@ -8,3 +8,4 @@ label_ippatsusaku.db
 label_ippatsusaku.db-shm
 label_ippatsusaku.db-wal
 .env
+installer_output/
