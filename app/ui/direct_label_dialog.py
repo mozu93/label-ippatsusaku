@@ -56,6 +56,7 @@ _BTN_DANGER = (
 class _CheckableHeader(QHeaderView):
     """列0にチェックボックスを描画するカスタムヘッダー"""
     toggled = pyqtSignal(bool)
+    sort_requested = pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(Qt.Orientation.Horizontal, parent)
@@ -91,6 +92,7 @@ class _CheckableHeader(QHeaderView):
             self.toggled.emit(self._checked)
         else:
             super().mousePressEvent(event)
+            self.sort_requested.emit(idx)
 
 
 class _MultilineDelegate(QStyledItemDelegate):
@@ -286,21 +288,26 @@ class DirectLabelDialog(QDialog):
     COL_PERSON  = 4
     COL_POSTAL  = 5
     COL_ADDR    = 6
+    COL_BC_ADDR = 7
 
     _COLS = [
-        ("",            32,  QHeaderView.ResizeMode.Fixed),
-        ("事業所名",    200, QHeaderView.ResizeMode.Stretch),
-        ("フリガナ",    130, QHeaderView.ResizeMode.Interactive),
-        ("所属・役職名", 130, QHeaderView.ResizeMode.Interactive),
-        ("氏名",        120, QHeaderView.ResizeMode.Interactive),
-        ("郵便番号",     90, QHeaderView.ResizeMode.Fixed),
-        ("住所",        250, QHeaderView.ResizeMode.Stretch),
+        ("",              32,  QHeaderView.ResizeMode.Fixed),
+        ("事業所名",      200, QHeaderView.ResizeMode.Stretch),
+        ("フリガナ",      130, QHeaderView.ResizeMode.Interactive),
+        ("所属・役職名",  130, QHeaderView.ResizeMode.Interactive),
+        ("氏名",          120, QHeaderView.ResizeMode.Interactive),
+        ("郵便番号",       90, QHeaderView.ResizeMode.Fixed),
+        ("住所",          250, QHeaderView.ResizeMode.Stretch),
+        ("住所表示番号",  130, QHeaderView.ResizeMode.Fixed),
     ]
 
     def __init__(self, batch_id: int | None = None, parent=None):
         super().__init__(parent)
         self._batch_id = batch_id
         self._last_chk_row: int | None = None
+        self._sort_col: int | None = None
+        self._sort_asc: bool = True
+        self._loading_batch: bool = False
         self.setWindowTitle("宛名ラベル 新規作成" if batch_id is None else "宛名ラベル 編集")
         self.setMinimumSize(940, 580)
         self.resize(1020, 640)
@@ -493,6 +500,7 @@ class DirectLabelDialog(QDialog):
         self.table = QTableWidget(0, len(self._COLS))
         self._chk_header = _CheckableHeader(self.table)
         self._chk_header.toggled.connect(self._on_header_toggled)
+        self._chk_header.sort_requested.connect(self._on_sort)
         self.table.setHorizontalHeader(self._chk_header)
         self._chk_header.setStretchLastSection(False)
         labels = [c[0] for c in self._COLS]
@@ -520,6 +528,8 @@ class DirectLabelDialog(QDialog):
         self.table.setItemDelegateForColumn(self.COL_COMPANY, _MultilineDelegate(self.table))
         self.table.setItemDelegateForColumn(self.COL_TITLE,   _MultilineDelegate(self.table))
         self.table.installEventFilter(self)
+        self.table.setColumnHidden(self.COL_BC_ADDR, True)
+        self.table.itemChanged.connect(self._on_item_changed)
         root.addWidget(self.table)
 
         foot = QHBoxLayout()
@@ -561,6 +571,10 @@ class DirectLabelDialog(QDialog):
         self._btn_export.clicked.connect(self._export)
 
         foot.addWidget(self._count_lbl)
+        self._chk_barcode = QCheckBox("カスタマバーコードを印字する")
+        self._chk_barcode.setStyleSheet("font-size: 12px; color: #475569;")
+        self._chk_barcode.toggled.connect(self._on_barcode_toggled)
+        foot.addWidget(self._chk_barcode)
         foot.addStretch()
         foot.addWidget(layout_lbl)
         foot.addWidget(self._layout_combo)
@@ -571,6 +585,94 @@ class DirectLabelDialog(QDialog):
         foot.addWidget(btn_cancel)
         foot.addWidget(self._btn_export)
         root.addLayout(foot)
+
+    def _on_barcode_toggled(self, enabled: bool):
+        self.table.setColumnHidden(self.COL_BC_ADDR, not enabled)
+        if enabled and not self._loading_batch:
+            self._populate_barcode_addr()
+
+    def _populate_barcode_addr(self):
+        from app.utils.customer_barcode import extract_address_code
+        from PyQt6.QtGui import QColor
+        self.table.blockSignals(True)
+        for row in range(self.table.rowCount()):
+            item_bc = self.table.item(row, self.COL_BC_ADDR)
+            if item_bc and item_bc.text().strip():
+                continue
+            addr = (self.table.item(row, self.COL_ADDR) or QTableWidgetItem()).text()
+            code, confident = extract_address_code(addr)
+            self._set_barcode_addr_item(row, code, warn=not confident)
+        self.table.blockSignals(False)
+
+    def _set_barcode_addr_item(self, row: int, code: str, warn: bool = False):
+        from PyQt6.QtGui import QColor
+        item = self.table.item(row, self.COL_BC_ADDR)
+        if item is None:
+            item = QTableWidgetItem(code)
+            self.table.setItem(row, self.COL_BC_ADDR, item)
+        else:
+            item.setText(code)
+        if warn:
+            item.setBackground(QColor('#FFF59D'))
+            item.setToolTip("住所から自動取得できませんでした。手入力で修正してください。")
+        else:
+            item.setBackground(QColor('white'))
+            item.setToolTip("")
+
+    def _on_item_changed(self, item: QTableWidgetItem):
+        if item.column() == self.COL_BC_ADDR:
+            from PyQt6.QtGui import QColor
+            item.setBackground(QColor('white'))
+            item.setToolTip("")
+
+    def _on_sort(self, col: int):
+        if col == self.COL_CHK:
+            return
+        if self._sort_col == col:
+            self._sort_asc = not self._sort_asc
+        else:
+            self._sort_col = col
+            self._sort_asc = True
+
+        rows_data = []
+        for r in range(self.table.rowCount()):
+            chk = self._get_row_chk(r)
+            vals = [
+                (self.table.item(r, c) or QTableWidgetItem()).text()
+                for c in range(self.COL_COMPANY, len(self._COLS))
+            ]
+            rows_data.append((chk.isChecked() if chk else True, vals))
+
+        col_offset = col - self.COL_COMPANY
+        rows_data.sort(
+            key=lambda x: x[1][col_offset].lower(),
+            reverse=not self._sort_asc,
+        )
+
+        self.table.setRowCount(0)
+        self._last_chk_row = None
+        for checked, vals in rows_data:
+            self._add_row(vals)
+            chk = self._get_row_chk(self.table.rowCount() - 1)
+            if chk:
+                chk.blockSignals(True)
+                chk.setChecked(checked)
+                chk.blockSignals(False)
+
+        self._update_sort_headers()
+        self._update_count()
+
+    def _update_sort_headers(self):
+        for col, (base, _, _) in enumerate(self._COLS):
+            if col == self._sort_col:
+                label = base + (" ▲" if self._sort_asc else " ▼")
+            else:
+                label = base
+            item = self.table.horizontalHeaderItem(col)
+            if item:
+                item.setText(label)
+            else:
+                self.table.setHorizontalHeaderItem(col, QTableWidgetItem(label))
 
     def _get_row_chk(self, row: int) -> QCheckBox | None:
         w = self.table.cellWidget(row, self.COL_CHK)
@@ -700,11 +802,13 @@ class DirectLabelDialog(QDialog):
                 self._radio_split4.setChecked(True)
             else:
                 self._radio_normal.setChecked(True)
-            entries = list(batch.entries)
+            entries        = list(batch.entries)
+            barcode_enabled = bool(batch.barcode_enabled)
             session.expunge_all()
         finally:
             session.close()
 
+        self._loading_batch = True
         self.table.setRowCount(0)
         self._last_chk_row = None
         for e in entries:
@@ -712,13 +816,16 @@ class DirectLabelDialog(QDialog):
             if e.address2:
                 addr = addr + (" " if addr else "") + e.address2
             self._add_row([
-                e.company_name or "",
-                e.company_kana or "",
-                e.title        or "",
-                e.person_name  or "",
-                e.postal_code  or "",
+                e.company_name    or "",
+                e.company_kana    or "",
+                e.title           or "",
+                e.person_name     or "",
+                e.postal_code     or "",
                 addr,
+                e.barcode_address or "",
             ])
+        self._loading_batch = False
+        self._chk_barcode.setChecked(barcode_enabled)
 
     def eventFilter(self, obj, event):
         if obj is self.table and event.type() == QEvent.Type.KeyPress:
@@ -934,35 +1041,40 @@ class DirectLabelDialog(QDialog):
                 item = self.table.item(_row, col)
                 return item.text().strip() if item else ""
             entry_dicts.append({
-                "sort_order":   sort_idx,
-                "client_id":    None,
-                "company_name": _cell(self.COL_COMPANY),
-                "company_kana": _cell(self.COL_KANA),
-                "postal_code":  _cell(self.COL_POSTAL),
-                "address1":     _cell(self.COL_ADDR),
-                "address2":     "",
-                "title":        _cell(self.COL_TITLE),
-                "person_name":  _cell(self.COL_PERSON),
-                "entry_mode":   "inherit",
+                "sort_order":     sort_idx,
+                "client_id":      None,
+                "company_name":   _cell(self.COL_COMPANY),
+                "company_kana":   _cell(self.COL_KANA),
+                "postal_code":    _cell(self.COL_POSTAL),
+                "address1":       _cell(self.COL_ADDR),
+                "address2":       "",
+                "title":          _cell(self.COL_TITLE),
+                "person_name":    _cell(self.COL_PERSON),
+                "barcode_address": _cell(self.COL_BC_ADDR),
+                "entry_mode":     "inherit",
             })
 
         session = get_session()
         try:
+            bc_enabled = 1 if self._chk_barcode.isChecked() else 0
             if self._batch_id is not None:
                 batch = session.get(LabelBatch, self._batch_id)
                 if batch:
-                    batch.batch_name = data_name
-                    batch.label_mode = mode
+                    batch.batch_name     = data_name
+                    batch.label_mode     = mode
+                    batch.barcode_enabled = bc_enabled
                     for old_e in list(batch.entries):
                         session.delete(old_e)
                     session.flush()
                 else:
-                    batch = LabelBatch(batch_name=data_name, label_mode=mode)
+                    batch = LabelBatch(batch_name=data_name, label_mode=mode,
+                                       barcode_enabled=bc_enabled)
                     session.add(batch)
                     session.flush()
                     self._batch_id = batch.id
             else:
-                batch = LabelBatch(batch_name=data_name, label_mode=mode)
+                batch = LabelBatch(batch_name=data_name, label_mode=mode,
+                                   barcode_enabled=bc_enabled)
                 session.add(batch)
                 session.flush()
                 self._batch_id = batch.id
@@ -989,7 +1101,8 @@ class DirectLabelDialog(QDialog):
         layout_key = self._layout_combo.currentData() or DEFAULT_LAYOUT_KEY
         font_key   = self._font_combo.currentData()   or DEFAULT_FONT_KEY
         try:
-            generate_label_pdf(orm_entries, os.path.normpath(pdf_path), mode, layout_key, font_key)
+            generate_label_pdf(orm_entries, os.path.normpath(pdf_path), mode, layout_key, font_key,
+                               barcode_enabled=self._chk_barcode.isChecked())
         except Exception as ex:
             QMessageBox.critical(self, "PDF 出力エラー", f"PDF の生成に失敗しました：\n{ex}")
             return
