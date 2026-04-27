@@ -659,9 +659,11 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
     if not company:
         return
 
-    P      = 4.0 * mm
-    inner_w = w - 2 * P
-    inner_h = h - 2 * P
+    P_tb    = 5.0 * mm   # 上下余白
+    P_left  = 4.0 * mm   # 左余白
+    P_right = 14.0 * mm  # 右余白（+1cm）
+    inner_w = w - P_left - P_right
+    inner_h = h - 2 * P_tb
 
     # ユーザーの手動改行で分割（空行は除外）
     lines = [ln for ln in company.split("\n") if ln]
@@ -698,7 +700,7 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
             pad = stringWidth(" ", font, fs) / 4
             cw  = [stringWidth(ch, font, fs) for ch in line]
             gap = inner_w - 2 * pad - sum(cw)
-            x   = x0 + P + pad
+            x   = x0 + P_left + pad
             for j, ch in enumerate(line):
                 c.drawString(x, cur_y, ch, mode=mode)
                 x += cw[j] + (gap if j == 0 else 0)
@@ -706,7 +708,7 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
             nchars = len(line)
             line_w = stringWidth(line, font, fs)
             gap    = (inner_w - line_w) / (nchars - 1) if nchars > 1 else 0
-            x      = x0 + P
+            x      = x0 + P_left
             for ch in line:
                 c.drawString(x, cur_y, ch, mode=mode)
                 x += stringWidth(ch, font, fs) + gap
