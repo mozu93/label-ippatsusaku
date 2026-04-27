@@ -78,14 +78,14 @@ def download_new_exe(url: str, progress_callback=None) -> Optional[str]:
 def launch_updater(new_exe_path: str, current_exe_path: str):
     """
     updater.bat を %TEMP% に生成して起動し、アプリを終了する。
-    bat は: 2秒待機 → 旧 exe を新 exe で上書き → 新 exe を起動 → 自己削除
+    リリース資産は Inno Setup インストーラーなので、直接起動するだけでよい。
+    bat は: 3秒待機（アプリ終了を待つ）→ インストーラーを起動 → 自己削除
     """
     bat_fd, bat_path = tempfile.mkstemp(suffix=".bat", prefix="label_ippatsusaku_updater_")
     with os.fdopen(bat_fd, "w", encoding="cp932") as f:
         f.write("@echo off\r\n")
-        f.write("timeout /t 2 /nobreak > nul\r\n")
-        f.write(f'copy /y "{new_exe_path}" "{current_exe_path}"\r\n')
-        f.write(f'start "" "{current_exe_path}"\r\n')
+        f.write("timeout /t 3 /nobreak > nul\r\n")
+        f.write(f'start "" "{new_exe_path}"\r\n')
         f.write('del "%~f0"\r\n')
     subprocess.Popen(["cmd", "/c", bat_path], creationflags=subprocess.CREATE_NO_WINDOW)
     sys.exit(0)
