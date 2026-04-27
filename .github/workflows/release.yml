@@ -26,6 +26,7 @@ jobs:
 
       - name: Get version
         id: ver
+        shell: pwsh
         run: |
           $v = python -c "from app.version import __version__; print(__version__)"
           "VERSION=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
@@ -33,14 +34,16 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller label_ippatsusaku.spec --noconfirm
 
+      - name: List dist contents
+        shell: pwsh
+        run: Get-ChildItem dist\LabelIppatsusaku | Select-Object -First 20
+
       - name: Install Inno Setup
         run: choco install innosetup --yes --no-progress
 
       - name: Build installer
-        run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
-            /DAppVersion=${{ steps.ver.outputs.VERSION }} `
-            installer\setup.iss
+        shell: pwsh
+        run: iscc "/DAppVersion=${{ steps.ver.outputs.VERSION }}" installer\setup.iss
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

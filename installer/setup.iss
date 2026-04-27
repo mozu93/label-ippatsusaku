@@ -12,7 +12,7 @@ AppSupportURL=https://github.com/mozu93/label-ippatsusaku/issues
 DefaultDirName={localappdata}\LabelIppatsusaku
 DefaultGroupName=ラベル一発作成
 DisableDirPage=yes
-OutputDir=installer_output
+OutputDir={#SourcePath}\..\installer_output
 OutputBaseFilename=LabelIppatsusaku_Setup_{#AppVersion}
 Compression=lzma
 SolidCompression=yes
@@ -26,7 +26,7 @@ Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "desktopicon"; Description: "デスクトップにショートカットを作成"; GroupDescription: "追加タスク:"; Flags: checked
 
 [Files]
-Source: "..\dist\LabelIppatsusaku\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#SourcePath}\..\dist\LabelIppatsusaku\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\ラベル一発作成"; Filename: "{app}\LabelIppatsusaku.exe"
