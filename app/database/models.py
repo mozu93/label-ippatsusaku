@@ -22,12 +22,13 @@ class Base(DeclarativeBase):
 class LabelBatch(Base):
     __tablename__ = "label_batches"
 
-    id         = Column(Integer, primary_key=True, autoincrement=True)
-    batch_name = Column(String(200), nullable=False)
-    label_mode = Column(String(20), default="normal")
-    pdf_path   = Column(String(500), default="")
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    batch_name      = Column(String(200), nullable=False)
+    label_mode      = Column(String(20), default="normal")
+    pdf_path        = Column(String(500), default="")
+    barcode_enabled = Column(Integer, default=0)
+    created_at      = Column(DateTime, default=datetime.now)
+    updated_at      = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     entries = relationship(
         "LabelEntry", back_populates="batch",
@@ -39,18 +40,19 @@ class LabelBatch(Base):
 class LabelEntry(Base):
     __tablename__ = "label_entries"
 
-    id           = Column(Integer, primary_key=True, autoincrement=True)
-    batch_id     = Column(Integer, ForeignKey("label_batches.id"), nullable=False)
-    sort_order   = Column(Integer, default=0)
-    client_id    = Column(Integer, nullable=True)
-    company_name = Column(String(200), default="")
-    company_kana = Column(String(200), default="")
-    postal_code  = Column(String(10), default="")
-    address1     = Column(String(200), default="")
-    address2     = Column(String(200), default="")
-    title        = Column(String(100), default="")
-    person_name  = Column(String(100), default="")
-    entry_mode   = Column(String(20), default="inherit")
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id        = Column(Integer, ForeignKey("label_batches.id"), nullable=False)
+    sort_order      = Column(Integer, default=0)
+    client_id       = Column(Integer, nullable=True)
+    company_name    = Column(String(200), default="")
+    company_kana    = Column(String(200), default="")
+    postal_code     = Column(String(10), default="")
+    address1        = Column(String(200), default="")
+    address2        = Column(String(200), default="")
+    title           = Column(String(100), default="")
+    person_name     = Column(String(100), default="")
+    barcode_address = Column(String(100), default="")
+    entry_mode      = Column(String(20), default="inherit")
 
     batch = relationship("LabelBatch", back_populates="entries")
 
@@ -74,6 +76,14 @@ def init_db():
         cols = [c["name"] for c in sa_inspect(engine).get_columns("label_entries")]
         if "company_kana" not in cols:
             conn.execute(text("ALTER TABLE label_entries ADD COLUMN company_kana VARCHAR(200) DEFAULT ''"))
+            conn.commit()
+        if "barcode_address" not in cols:
+            conn.execute(text("ALTER TABLE label_entries ADD COLUMN barcode_address VARCHAR(100) DEFAULT ''"))
+            conn.commit()
+
+        batch_cols = [c["name"] for c in sa_inspect(engine).get_columns("label_batches")]
+        if "barcode_enabled" not in batch_cols:
+            conn.execute(text("ALTER TABLE label_batches ADD COLUMN barcode_enabled INTEGER DEFAULT 0"))
             conn.commit()
 
 
