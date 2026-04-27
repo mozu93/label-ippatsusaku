@@ -659,7 +659,7 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
     if not company:
         return
 
-    P_tb    = 5.0 * mm   # 上下余白
+    P_tb    = 0.0 * mm   # 上下余白
     P_left  = 4.0 * mm   # 左余白
     P_right = 14.0 * mm  # 右余白（+1cm）
     inner_w = w - P_left - P_right
