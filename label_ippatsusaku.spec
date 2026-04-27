@@ -4,6 +4,7 @@ from PyInstaller.utils.hooks import collect_data_files
 datas = []
 datas += collect_data_files('pykakasi')
 datas += collect_data_files('reportlab')
+datas += [('assets', 'assets')]
 
 a = Analysis(
     ['main.py'],
@@ -40,6 +41,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='assets/app_icon.ico',
 )
 
 coll = COLLECT(
