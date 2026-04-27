@@ -672,22 +672,21 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
     # 複数行のときは行間を詰める（行間 = フォントサイズの8%）、1行は標準
     LINE_H = 1.08 if n > 1 else 1.4
 
-    # フォントサイズ：横幅制約と縦高さ制約の両方を満たす最大値
-    widest  = max(lines, key=lambda ln: stringWidth(ln, font, 150.0))
-    fs_w    = _fit_text(widest, font, 150.0, inner_w, min_size=8.0)
-    fs_h    = inner_h / (n * LINE_H)          # n行が縦に収まる上限
-    fs      = min(fs_w, fs_h)
-    line_h  = fs * LINE_H
+    # フォントサイズ：横幅制約と縦高さ制約の両方を満たす最大値（上限 125pt）
+    widest = max(lines, key=lambda ln: stringWidth(ln, font, 150.0))
+    fs_h   = min(inner_h / (n * LINE_H), 125.0)
+    fs     = min(_fit_text(widest, font, fs_h, inner_w, min_size=8.0), fs_h)
+    line_h = fs * LINE_H
 
     # 上下中央：テキストブロック全体の視覚中心をラベル中央に合わせる
     start_y = y0 + h / 2 + (n - 1) * line_h / 2 - fs * 0.3 + y_offset
 
-    bold = n > 1
+    bold = n > 1 or (n == 1 and len(lines[0]) >= 6)
     c.setFont(font, fs)
     c.setFillColor(black)
     if bold:
         c.setStrokeColor(black)
-        c.setLineWidth(fs * 0.02)   # 縁取り幅でボールド感を出す
+        c.setLineWidth(fs * 0.025)  # 縁取り幅でボールド感を出す
 
     for i, line in enumerate(lines):
         cur_y = start_y - i * line_h
