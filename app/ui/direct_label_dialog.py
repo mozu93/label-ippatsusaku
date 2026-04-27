@@ -574,6 +574,7 @@ class DirectLabelDialog(QDialog):
         self._chk_barcode = QCheckBox("カスタマバーコードを印字する")
         self._chk_barcode.setStyleSheet("font-size: 12px; color: #475569;")
         self._chk_barcode.toggled.connect(self._on_barcode_toggled)
+        self._chk_barcode.setVisible(False)   # 機能一時無効化
         foot.addWidget(self._chk_barcode)
         foot.addStretch()
         foot.addWidget(layout_lbl)
@@ -825,7 +826,7 @@ class DirectLabelDialog(QDialog):
                 e.barcode_address or "",
             ])
         self._loading_batch = False
-        self._chk_barcode.setChecked(barcode_enabled)
+        self._chk_barcode.setChecked(False)   # 機能一時無効化
 
     def eventFilter(self, obj, event):
         if obj is self.table and event.type() == QEvent.Type.KeyPress:
