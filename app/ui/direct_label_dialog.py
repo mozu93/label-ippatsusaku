@@ -12,10 +12,10 @@ from PyQt6.QtWidgets import (
     QMessageBox, QFileDialog,
     QComboBox, QLineEdit,
     QDialogButtonBox, QPlainTextEdit, QStyledItemDelegate,
-    QAbstractItemDelegate, QApplication, QStyle, QStyleOptionButton,
+    QAbstractItemDelegate, QApplication,
     QCheckBox, QWidget,
 )
-from PyQt6.QtCore import Qt, QEvent, QRect, pyqtSignal
+from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QFont
 
 from app.database.models import get_session, LabelBatch, LabelEntry
@@ -29,70 +29,12 @@ from app.services.label_pdf_service import (
     generate_label_pdf, LABEL_LAYOUTS, DEFAULT_LAYOUT_KEY,
     FONT_OPTIONS, DEFAULT_FONT_KEY,
 )
+from app.ui.theme import BTN_PRIMARY, BTN_DANGER, BTN_OUTLINE
+from app.ui.widgets import CheckableHeader
 from app.utils.app_config import (
     get_label_save_path,
     get_direct_label_save_path, set_direct_label_save_path,
 )
-
-_BTN_PRIMARY = (
-    "QPushButton { background: #1565C0; color: white; border-radius: 4px; "
-    "padding: 0 20px; font-size: 13px; min-height: 34px; }"
-    "QPushButton:hover { background: #1976D2; }"
-    "QPushButton:disabled { background: #BDBDBD; }"
-)
-_BTN_SECONDARY = (
-    "QPushButton { background: white; color: #1565C0; border: 1px solid #1565C0; "
-    "border-radius: 4px; padding: 0 20px; font-size: 13px; min-height: 34px; }"
-    "QPushButton:hover { background: #E3F2FD; }"
-    "QPushButton:disabled { color: #BDBDBD; border-color: #BDBDBD; }"
-)
-_BTN_DANGER = (
-    "QPushButton { background: #D32F2F; color: white; border-radius: 4px; "
-    "padding: 0 16px; font-size: 12px; min-height: 28px; }"
-    "QPushButton:hover { background: #B71C1C; }"
-)
-
-
-class _CheckableHeader(QHeaderView):
-    """列0にチェックボックスを描画するカスタムヘッダー"""
-    toggled = pyqtSignal(bool)
-    sort_requested = pyqtSignal(int)
-
-    def __init__(self, parent=None):
-        super().__init__(Qt.Orientation.Horizontal, parent)
-        self._checked = True
-        self.setSectionsClickable(True)
-
-    def set_checked(self, checked: bool):
-        self._checked = checked
-        self.viewport().update()
-
-    def paintSection(self, painter, rect, logical_index):
-        painter.save()
-        super().paintSection(painter, rect, logical_index)
-        painter.restore()
-        if logical_index == 0:
-            opt = QStyleOptionButton()
-            cb = 14
-            opt.rect = QRect(
-                rect.x() + (rect.width() - cb) // 2,
-                rect.y() + (rect.height() - cb) // 2,
-                cb, cb,
-            )
-            opt.state = QStyle.StateFlag.State_Enabled | QStyle.StateFlag.State_Active
-            opt.state |= (QStyle.StateFlag.State_On if self._checked
-                          else QStyle.StateFlag.State_Off)
-            self.style().drawControl(QStyle.ControlElement.CE_CheckBox, opt, painter)
-
-    def mousePressEvent(self, event):
-        idx = self.logicalIndexAt(event.pos())
-        if idx == 0:
-            self._checked = not self._checked
-            self.viewport().update()
-            self.toggled.emit(self._checked)
-        else:
-            super().mousePressEvent(event)
-            self.sort_requested.emit(idx)
 
 
 class _MultilineDelegate(QStyledItemDelegate):
@@ -439,7 +381,7 @@ class DirectLabelDialog(QDialog):
         ops.setSpacing(6)
         btn_paste = QPushButton("貼り付けから取込")
         btn_paste.setFixedHeight(32)
-        btn_paste.setStyleSheet(_BTN_SECONDARY)
+        btn_paste.setStyleSheet(BTN_OUTLINE)
         btn_paste.setToolTip(
             "Excel からコピーしたデータを取込みます。\n"
             "推奨列順（ヘッダーあり）: 企業名 / 郵便番号 / 住所 / 所属・役職 / 氏名\n"
@@ -449,22 +391,22 @@ class DirectLabelDialog(QDialog):
 
         btn_csv = QPushButton("CSV から取込")
         btn_csv.setFixedHeight(32)
-        btn_csv.setStyleSheet(_BTN_SECONDARY)
+        btn_csv.setStyleSheet(BTN_OUTLINE)
         btn_csv.clicked.connect(self._do_csv)
 
         btn_add = QPushButton("＋ 行を追加")
         btn_add.setFixedHeight(32)
-        btn_add.setStyleSheet(_BTN_SECONDARY)
+        btn_add.setStyleSheet(BTN_OUTLINE)
         btn_add.clicked.connect(self._add_row)
 
         btn_del = QPushButton("選択行を削除")
         btn_del.setFixedHeight(32)
-        btn_del.setStyleSheet(_BTN_DANGER)
+        btn_del.setStyleSheet(BTN_DANGER)
         btn_del.clicked.connect(self._del_rows)
 
         btn_postal = QPushButton("郵便番号を自動入力")
         btn_postal.setFixedHeight(32)
-        btn_postal.setStyleSheet(_BTN_SECONDARY)
+        btn_postal.setStyleSheet(BTN_OUTLINE)
         btn_postal.setToolTip(
             "住所が入力されていて郵便番号が空の行に、\n"
             "zipcloud API（インターネット接続必要）で郵便番号を補完します。"
@@ -473,7 +415,7 @@ class DirectLabelDialog(QDialog):
 
         btn_kana = QPushButton("フリガナを自動入力")
         btn_kana.setFixedHeight(32)
-        btn_kana.setStyleSheet(_BTN_SECONDARY)
+        btn_kana.setStyleSheet(BTN_OUTLINE)
         btn_kana.setToolTip(
             "事業所名が入力されていてフリガナが空の行に、\n"
             "カタカナのフリガナを自動補完します。\n"
@@ -498,7 +440,7 @@ class DirectLabelDialog(QDialog):
         root.addLayout(ops)
 
         self.table = QTableWidget(0, len(self._COLS))
-        self._chk_header = _CheckableHeader(self.table)
+        self._chk_header = CheckableHeader(self.table, initial_checked=True)
         self._chk_header.toggled.connect(self._on_header_toggled)
         self._chk_header.sort_requested.connect(self._on_sort)
         self.table.setHorizontalHeader(self._chk_header)
@@ -567,7 +509,7 @@ class DirectLabelDialog(QDialog):
 
         self._btn_export = QPushButton("PDF を出力する")
         self._btn_export.setFixedHeight(36)
-        self._btn_export.setStyleSheet(_BTN_PRIMARY)
+        self._btn_export.setStyleSheet(BTN_PRIMARY)
         self._btn_export.clicked.connect(self._export)
 
         foot.addWidget(self._count_lbl)
@@ -925,19 +867,9 @@ class DirectLabelDialog(QDialog):
             ])
         QMessageBox.information(self, "取込完了", f"{len(direct_rows)} 件を取り込みました。")
 
-    def _do_paste(self):
-        from PyQt6.QtWidgets import QApplication
-        text = QApplication.clipboard().text()
-        if not text.strip():
-            QMessageBox.information(self, "貼り付け", "クリップボードにテキストがありません。")
-            return
-        try:
-            headers, data_rows = parse_raw_clipboard(text)
-        except Exception as e:
-            QMessageBox.critical(self, "エラー", f"貼り付けデータの解析に失敗しました：\n{e}")
-            return
+    def _import_rows(self, headers: list, data_rows: list) -> None:
         if not headers:
-            QMessageBox.information(self, "貼り付け", "取込可能なデータがありませんでした。")
+            QMessageBox.information(self, "取込結果", "取込可能なデータがありませんでした。")
             return
 
         dlg = ColumnMappingDialog(headers, data_rows[:5], self._current_mode(), self)
@@ -961,6 +893,19 @@ class DirectLabelDialog(QDialog):
             if dr.company_name:
                 rows.append(dr)
         self._fill_rows(rows)
+
+    def _do_paste(self):
+        from PyQt6.QtWidgets import QApplication
+        text = QApplication.clipboard().text()
+        if not text.strip():
+            QMessageBox.information(self, "貼り付け", "クリップボードにテキストがありません。")
+            return
+        try:
+            headers, data_rows = parse_raw_clipboard(text)
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", f"貼り付けデータの解析に失敗しました：\n{e}")
+            return
+        self._import_rows(headers, data_rows)
 
     def _do_csv(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -974,31 +919,7 @@ class DirectLabelDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"CSV 読み込みエラー：\n{e}")
             return
-        if not headers:
-            QMessageBox.information(self, "CSV 取込", "取込可能なデータがありませんでした。")
-            return
-
-        dlg = ColumnMappingDialog(headers, data_rows[:5], self._current_mode(), self)
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        mapping = dlg.get_mapping()
-        rows = []
-        for row in data_rows:
-            def _get(field_id, _row=row):
-                idx = mapping.get(field_id)
-                return _row[idx] if idx is not None and idx < len(_row) else ""
-            dr = DirectRow(
-                company_name=_get("company_name"),
-                company_kana=_get("company_kana"),
-                postal_code =_get("postal_code"),
-                address1    =_get("address1"),
-                title       =_get("title"),
-                person_name =_get("person_name"),
-            )
-            if dr.company_name:
-                rows.append(dr)
-        self._fill_rows(rows)
+        self._import_rows(headers, data_rows)
 
     def _export(self):
         if self.table.rowCount() == 0:
