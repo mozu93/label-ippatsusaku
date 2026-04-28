@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QStyle, QStyleOptionButton, QApplication,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QRect
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from app.database.models import get_session, LabelBatch
@@ -20,6 +20,7 @@ from app.ui.theme import (
     C_TEXT_SUB, BTN_H, BTN_H_SM, ROW_H,
     font_page_title,
 )
+from app.ui.widgets import CheckableHeader, MODE_LABEL
 
 COL_CHK  = 0
 COL_ID   = 1
@@ -28,48 +29,6 @@ COL_CNT  = 3
 COL_MODE = 4
 COL_DATE = 5
 COL_OPS  = 6
-
-
-class _CheckableHeader(QHeaderView):
-    """列0にチェックボックスを描画するカスタムヘッダー"""
-    toggled = pyqtSignal(bool)
-    sort_requested = pyqtSignal(int)
-
-    def __init__(self, parent=None):
-        super().__init__(Qt.Orientation.Horizontal, parent)
-        self._checked = False
-        self.setSectionsClickable(True)
-
-    def set_checked(self, checked: bool):
-        self._checked = checked
-        self.viewport().update()
-
-    def paintSection(self, painter, rect, logical_index):
-        painter.save()
-        super().paintSection(painter, rect, logical_index)
-        painter.restore()
-        if logical_index == 0:
-            opt = QStyleOptionButton()
-            cb = 14
-            opt.rect = QRect(
-                rect.x() + (rect.width() - cb) // 2,
-                rect.y() + (rect.height() - cb) // 2,
-                cb, cb,
-            )
-            opt.state = QStyle.StateFlag.State_Enabled | QStyle.StateFlag.State_Active
-            opt.state |= (QStyle.StateFlag.State_On if self._checked
-                          else QStyle.StateFlag.State_Off)
-            self.style().drawControl(QStyle.ControlElement.CE_CheckBox, opt, painter)
-
-    def mousePressEvent(self, event):
-        idx = self.logicalIndexAt(event.pos())
-        if idx == 0:
-            self._checked = not self._checked
-            self.viewport().update()
-            self.toggled.emit(self._checked)
-        else:
-            super().mousePressEvent(event)
-            self.sort_requested.emit(idx)
 
 
 class LabelListWidget(QWidget):
@@ -141,7 +100,7 @@ class LabelListWidget(QWidget):
         self.table.setHorizontalHeaderLabels(
             ["", "ID", "ラベル名", "件数", "モード", "作成日時", "操作"]
         )
-        self._chk_header = _CheckableHeader(self.table)
+        self._chk_header = CheckableHeader(self.table)
         self._chk_header.toggled.connect(self._on_header_toggled)
         self._chk_header.sort_requested.connect(self._on_sort)
         self.table.setHorizontalHeader(self._chk_header)
@@ -216,13 +175,6 @@ class LabelListWidget(QWidget):
         else:
             self._sort_col = col
             self._sort_asc = True
-        _MODE_LABEL = {
-            "normal":    "宛名(氏名あり)",
-            "no_person": "宛名(氏名なし)",
-            "simple":    "事業所名のみ",
-            "nametag":   "名札",
-            "split4":    "卓上プレート",
-        }
         if col == COL_ID:
             key = lambda b: b.id
         elif col == COL_NAME:
@@ -230,7 +182,7 @@ class LabelListWidget(QWidget):
         elif col == COL_CNT:
             key = lambda b: self._filtered_counts.get(b.id, 0)
         elif col == COL_MODE:
-            key = lambda b: _MODE_LABEL.get(b.label_mode, b.label_mode or "")
+            key = lambda b: MODE_LABEL.get(b.label_mode, b.label_mode or "")
         elif col == COL_DATE:
             key = lambda b: b.created_at or datetime.min
         else:
@@ -259,13 +211,6 @@ class LabelListWidget(QWidget):
 
     def _render(self, counts: dict, batches: list | None = None):
         self.table.setRowCount(0)
-        MODE_LABEL = {
-            "normal":    "宛名(氏名あり)",
-            "no_person": "宛名(氏名なし)",
-            "simple":    "事業所名のみ",
-            "nametag":   "名札",
-            "split4":    "卓上プレート",
-        }
         display_batches = batches if batches is not None else self._batches
 
         for b in display_batches:
