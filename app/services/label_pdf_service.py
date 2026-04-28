@@ -11,7 +11,7 @@ LABEL_LAYOUTS に仕様を追加するだけで新しいサイズを登録でき
   "a_one_51002" : A-ONE 51002  A4 2列×5行  91×55mm    上余白11mm（名札用）
   "a4_4split"   : A4 横長4分割 A4 1列×4行  210×74.25mm（プレートモード用）
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 
 from reportlab.lib.pagesizes import A4
@@ -67,6 +67,7 @@ class LabelLayout:
     gap_h_mm:        float  # 列間ギャップ (mm) ※ 水平方向の間隔 − ラベル幅
     gap_v_mm:        float  # 行間ギャップ (mm) ※ 垂直方向の間隔 − ラベル高
     page_h_mm:       float = 297.0  # ページ高さ (mm)。ラベル用紙の実寸を指定
+    col_offsets_mm:  list   = field(default=None)  # 列ごとの水平補正 (mm)。[左列, 中列, 右列, ...]
 
 
 # ── 登録済みレイアウト ─────────────────────────────────────────────────
@@ -87,6 +88,7 @@ LABEL_LAYOUTS: dict[str, LabelLayout] = {
         gap_h_mm       = 0.0,   # 水平間隔70mm − ラベル幅70mm = 0
         gap_v_mm       = 0.0,   # 垂直間隔42.3mm − ラベル高42.3mm = 0
         page_h_mm      = 296.9, # ラベル用紙実寸（A4標準297mmより0.1mm短い）
+        col_offsets_mm = [1.0, 0.0, -1.0],  # 左列+1mm、中列そのまま、右列-1mm
     ),
     "a_one_28187": LabelLayout(
         name           = "A-ONE 28187  (A4 / 2列×6行 / 84×42mm)",
@@ -145,7 +147,9 @@ def _label_origin(col: int, row: int, layout: LabelLayout) -> tuple[float, float
     ml = layout.margin_left_mm * mm
     gh = layout.gap_h_mm * mm
     gv = layout.gap_v_mm * mm
-    x = ml + col * (lw + gh)
+    offsets = layout.col_offsets_mm or []
+    col_offset = offsets[col] * mm if col < len(offsets) else 0.0
+    x = ml + col * (lw + gh) + col_offset
     y = page_h - mt - (row + 1) * lh - row * gv
     return x, y
 
@@ -333,14 +337,14 @@ def _draw_normal(c, x0, y0, w, h,
         while a:
             line, a = _split_line(a, font, addr_fs, inner_w)
             c.drawString(x0 + P, cur_y, line)
-            cur_y -= LH * 0.95
+            cur_y -= addr_fs + (LH * 0.95 - addr_fs) * 0.25
     if addr2:
         c.drawString(x0 + P, cur_y, addr2)
         cur_y -= LH * 0.95
 
     # 住所と事業所名の間に半行分の空白
     if postal or addr1 or addr2:
-        cur_y -= LH * 0.4
+        cur_y -= LH * 0.2
 
     # ── 事業所名（企業名）────────────────────────────────────────────
     # 10ptで1行に収まれば単行（最大11pt）、収まらなければ\n優先で10pt折り返し
@@ -352,7 +356,7 @@ def _draw_normal(c, x0, y0, w, h,
             fs = _fit_text(company, font, co_max_fs, co_avail, min_size=target_fs)
             c.setFont(font, fs)
             c.drawString(x0 + indent1, cur_y, company)
-            cur_y -= LH * 1.05
+            cur_y -= LH * 1.26
         else:
             c.setFont(font, target_fs)
             for seg in company.split("\n"):
@@ -362,7 +366,8 @@ def _draw_normal(c, x0, y0, w, h,
                 while rem:
                     line, rem = _split_line(rem, font, target_fs, co_avail)
                     c.drawString(x0 + indent1, cur_y, line)
-                    cur_y -= LH * 0.9
+                    cur_y -= target_fs + (LH * 0.9 - target_fs) * 0.25
+            cur_y -= (target_fs + (LH * 0.9 - target_fs) * 0.25) * 0.2
 
     # ── 所属・役職（10ptで1行、収まらなければ\n優先で折り返し）──────
     if title:
@@ -385,7 +390,7 @@ def _draw_normal(c, x0, y0, w, h,
                 while rem:
                     line, rem = _split_line(rem, font, target_fs, title_avail)
                     c.drawString(x0 + indent1, cur_y, line)
-                    cur_y -= LH * 0.9
+                    cur_y -= target_fs + (LH * 0.9 - target_fs) * 0.25
 
     # ── 氏名 + 様（役職あり: 少し余白、役職なし: 詰めて配置）──────────
     if person:

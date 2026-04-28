@@ -1036,24 +1036,27 @@ class DirectLabelDialog(QDialog):
                                 "出力したい行にチェックを入れてください。")
             return
 
-        entry_dicts = []
-        for sort_idx, row in enumerate(checked_rows):
+        # 全行をDBに保存（sort_order = テーブル行インデックス）
+        all_entry_dicts = []
+        for row in range(self.table.rowCount()):
             def _cell(col, _row=row):
                 item = self.table.item(_row, col)
                 return item.text().strip() if item else ""
-            entry_dicts.append({
-                "sort_order":     sort_idx,
-                "client_id":      None,
-                "company_name":   _cell(self.COL_COMPANY),
-                "company_kana":   _cell(self.COL_KANA),
-                "postal_code":    _cell(self.COL_POSTAL),
-                "address1":       _cell(self.COL_ADDR),
-                "address2":       "",
-                "title":          _cell(self.COL_TITLE),
-                "person_name":    _cell(self.COL_PERSON),
+            all_entry_dicts.append({
+                "sort_order":      row,
+                "client_id":       None,
+                "company_name":    _cell(self.COL_COMPANY),
+                "company_kana":    _cell(self.COL_KANA),
+                "postal_code":     _cell(self.COL_POSTAL),
+                "address1":        _cell(self.COL_ADDR),
+                "address2":        "",
+                "title":           _cell(self.COL_TITLE),
+                "person_name":     _cell(self.COL_PERSON),
                 "barcode_address": _cell(self.COL_BC_ADDR),
-                "entry_mode":     "inherit",
+                "entry_mode":      "inherit",
             })
+
+        checked_set = set(checked_rows)
 
         session = get_session()
         try:
@@ -1061,8 +1064,8 @@ class DirectLabelDialog(QDialog):
             if self._batch_id is not None:
                 batch = session.get(LabelBatch, self._batch_id)
                 if batch:
-                    batch.batch_name     = data_name
-                    batch.label_mode     = mode
+                    batch.batch_name      = data_name
+                    batch.label_mode      = mode
                     batch.barcode_enabled = bc_enabled
                     for old_e in list(batch.entries):
                         session.delete(old_e)
@@ -1079,15 +1082,17 @@ class DirectLabelDialog(QDialog):
                 session.add(batch)
                 session.flush()
                 self._batch_id = batch.id
-            for ed in entry_dicts:
+            for ed in all_entry_dicts:
                 e = LabelEntry(batch_id=batch.id, **{k: v for k, v in ed.items()})
                 session.add(e)
             session.commit()
             batch_id = batch.id
 
+            # PDF出力はチェック済み行のみ（sort_order = テーブル行インデックス）
             orm_entries = (
                 session.query(LabelEntry)
-                .filter_by(batch_id=batch_id)
+                .filter(LabelEntry.batch_id == batch_id,
+                        LabelEntry.sort_order.in_(checked_set))
                 .order_by(LabelEntry.sort_order)
                 .all()
             )
