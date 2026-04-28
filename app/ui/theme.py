@@ -87,6 +87,15 @@ BTN_GHOST = (
     f"QPushButton:hover {{ background: {C_BG}; color: {C_TEXT}; }}"
 )
 
+# アウトラインボタン（白地・青枠・青文字）
+BTN_OUTLINE = (
+    f"QPushButton {{ background: white; color: {C_PRIMARY}; "
+    f"border: 1px solid {C_PRIMARY}; border-radius: 4px; "
+    f"font-size: 13px; font-family: '{FONT_FAMILY}'; padding: 0 20px; }}"
+    f"QPushButton:hover {{ background: {C_PRIMARY_LIGHT}; }}"
+    f"QPushButton:disabled {{ color: #BDBDBD; border-color: #BDBDBD; }}"
+)
+
 # ── 入力欄スタイル ──────────────────────────────────────────────────
 INPUT_STYLE = (
     f"QLineEdit, QComboBox, QDateEdit, QSpinBox {{"
