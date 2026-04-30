@@ -31,7 +31,7 @@ _FONT_FILES = {
     "MSPGothic":     ("C:/Windows/Fonts/msgothic.ttc",          2),
     "MSPMincho":     ("C:/Windows/Fonts/msmincho.ttc",          1),
     "UDKyokasho":    ("C:/Windows/Fonts/UDDigiKyokashoN-R.ttc", 0),
-    "HGRMaruGothic": ("C:/Windows/Fonts/HGRME.TTC",             0),
+    "HGRMaruGothic": ("C:/Windows/Fonts/HGRSMP.TTF",            0),
 }
 _registered: set[str] = set()
 for _name, (_path, _idx) in _FONT_FILES.items():
