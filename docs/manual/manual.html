@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ラベル一発作成 ユーザーマニュアル</title>
+<style>
+  body { font-family: "Meiryo UI", "Meiryo", "Yu Gothic UI", sans-serif; font-size: 14px; color: #1e293b; max-width: 860px; margin: 40px auto; padding: 0 24px; line-height: 1.8; background: #f8fafc; }
+  h1 { font-size: 24px; color: #1565C0; border-bottom: 3px solid #1565C0; padding-bottom: 8px; margin-top: 0; }
+  h2 { font-size: 18px; color: #1565C0; border-bottom: 1px solid #CBD5E1; padding-bottom: 4px; margin-top: 40px; }
+  h3 { font-size: 15px; color: #334155; margin-top: 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th { background: #EFF6FF; color: #1565C0; font-weight: bold; text-align: left; padding: 8px 12px; border: 1px solid #CBD5E1; }
+  td { padding: 7px 12px; border: 1px solid #E2E8F0; vertical-align: top; }
+  tr:nth-child(even) td { background: #F8FAFC; }
+  code { background: #EFF6FF; padding: 2px 6px; border-radius: 3px; font-family: Consolas, monospace; font-size: 13px; color: #1565C0; }
+  pre { background: #1e293b; color: #e2e8f0; padding: 16px; border-radius: 6px; overflow-x: auto; font-size: 13px; line-height: 1.6; }
+  pre code { background: none; color: inherit; padding: 0; }
+  blockquote { border-left: 4px solid #86EFAC; background: #F0FDF4; color: #166534; margin: 12px 0; padding: 10px 16px; border-radius: 0 4px 4px 0; }
+  .toc { background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 6px; padding: 16px 24px; margin: 24px 0; }
+  .toc a { color: #1565C0; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .toc ol { margin: 0; padding-left: 20px; }
+  .toc li { margin: 4px 0; }
+  .version { font-size: 12px; color: #64748B; text-align: right; margin-top: 48px; border-top: 1px solid #E2E8F0; padding-top: 12px; }
+  section { background: white; border: 1px solid #E2E8F0; border-radius: 8px; padding: 24px; margin: 24px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+</style>
+</head>
+<body>
+
+<h1>ラベル一発作成 ユーザーマニュアル</h1>
+<p>バージョン 1.2.8</p>
+
+<div class="toc">
+  <strong>目次</strong>
+  <ol>
+    <li><a href="#overview">概要</a></li>
+    <li><a href="#basic">基本的な使い方</a></li>
+    <li><a href="#modes">モードの選び方</a></li>
+    <li><a href="#import">データの取り込み方</a></li>
+    <li><a href="#autocomplete">補完機能</a></li>
+    <li><a href="#export">PDF出力</a></li>
+    <li><a href="#paper">ラベル用紙・フォントの選択</a></li>
+    <li><a href="#manage">データの管理</a></li>
+    <li><a href="#faq">よくある質問</a></li>
+  </ol>
+</div>
+
+<section id="overview">
+<h2>1. 概要</h2>
+<p><strong>ラベル一発作成</strong>は、ExcelやCSVのデータから宛名ラベル・名札・卓上プレートのPDFを素早く作成するアプリです。</p>
+<h3>できること</h3>
+<ul>
+  <li>宛名ラベル（氏名あり・氏名なし・事業所名のみ）</li>
+  <li>名札（A-ONE 51002 対応）</li>
+  <li>卓上事業所名プレート（A4横長4分割）</li>
+  <li>Excelからコピー&amp;貼り付けでデータ取込</li>
+  <li>CSVファイルからデータ取込</li>
+  <li>郵便番号の自動補完（住所から検索）</li>
+  <li>フリガナの自動補完</li>
+</ul>
+</section>
+
+<section id="basic">
+<h2>2. 基本的な使い方</h2>
+<h3>手順の流れ</h3>
+<pre><code>① アプリを起動
+② 「＋ 新規作成」をクリック
+③ データ名を入力
+④ モードを選択
+⑤ データを取り込む（貼り付け または CSV）
+⑥ 必要に応じて編集・補完
+⑦ 「PDF を出力する」をクリック</code></pre>
+
+<h3>起動方法</h3>
+<p>以下のいずれかの方法でアプリを起動します。</p>
+<ul>
+  <li><strong>デスクトップ</strong>の「ラベル一発作成」ショートカットをダブルクリック（インストール時にショートカット作成を選んだ場合）</li>
+  <li><strong>スタートメニュー</strong>→「ラベル一発作成」をクリック</li>
+</ul>
+</section>
+
+<section id="modes">
+<h2>3. モードの選び方</h2>
+<p>新規作成ダイアログ上部のラジオボタンでモードを選択します。</p>
+<table>
+  <tr><th>モード</th><th>出力内容</th><th>用途</th></tr>
+  <tr><td><strong>宛名ラベル（氏名あり）</strong></td><td>郵便番号・住所・事業所名・役職・氏名　様</td><td>個人宛の封書</td></tr>
+  <tr><td><strong>宛名ラベル（氏名なし）</strong></td><td>郵便番号・住所・事業所名　御中</td><td>法人宛の封書</td></tr>
+  <tr><td><strong>宛名ラベル（事業所名のみ）</strong></td><td>事業所名　御中</td><td>社内便・簡易ラベル</td></tr>
+  <tr><td><strong>名札</strong></td><td>事業所名・役職・氏名（大きめ）</td><td>会議・研修の名札</td></tr>
+  <tr><td><strong>卓上事業所名プレート</strong></td><td>事業所名を均等割付（上下反転セット）</td><td>卓上プレート</td></tr>
+</table>
+<h3>モード別の推奨用紙</h3>
+<table>
+  <tr><th>モード</th><th>推奨用紙</th></tr>
+  <tr><td>宛名ラベル（氏名あり・なし・のみ）</td><td>A-ONE 28185 または A-ONE 28187</td></tr>
+  <tr><td>名札</td><td>A-ONE 51002</td></tr>
+  <tr><td>卓上事業所名プレート</td><td>A4 横長4分割</td></tr>
+</table>
+<blockquote>モードを選ぶと用紙の選択が自動的に切り替わります。</blockquote>
+</section>
+
+<section id="import">
+<h2>4. データの取り込み方</h2>
+
+<h3>4-1. Excelから貼り付ける（推奨）</h3>
+<ol>
+  <li>Excelでデータ範囲を選択してコピー（Ctrl+C）</li>
+  <li>アプリの「<strong>貼り付けから取込</strong>」ボタンをクリック</li>
+  <li>「列の対応を設定」ダイアログで各フィールドに対応する列を選択</li>
+  <li>「取込む」をクリック</li>
+</ol>
+<p><strong>推奨する列の順番（ヘッダーあり）:</strong></p>
+<pre><code>事業所名 | 郵便番号 | 住所 | 所属・役職名 | 氏名</code></pre>
+<p>ヘッダー行がない場合は列数で自動判定します：</p>
+<table>
+  <tr><th>列数</th><th>自動割り当て</th></tr>
+  <tr><td>2列</td><td>事業所名、氏名</td></tr>
+  <tr><td>3列</td><td>事業所名、肩書、氏名</td></tr>
+  <tr><td>4列</td><td>事業所名、住所、肩書、氏名</td></tr>
+  <tr><td>5列</td><td>事業所名、郵便番号、住所、肩書、氏名</td></tr>
+  <tr><td>6列</td><td>事業所名、郵便番号、住所1、住所2、肩書、氏名</td></tr>
+</table>
+
+<h3>4-2. CSVから取り込む</h3>
+<ol>
+  <li>「<strong>CSV から取込</strong>」ボタンをクリック</li>
+  <li>CSVファイルを選択</li>
+  <li>「列の対応を設定」ダイアログで列を割り当て</li>
+  <li>「取込む」をクリック</li>
+</ol>
+<blockquote>文字コードは UTF-8 / Shift-JIS どちらも自動判定します。</blockquote>
+
+<h3>4-3. 手動で行を追加する</h3>
+<p>「<strong>＋ 行を追加</strong>」ボタンで空行を追加し、各セルを直接入力できます。</p>
+<ul>
+  <li><strong>事業所名</strong>・<strong>所属・役職名</strong> のセルは改行（Alt+Enter）に対応しています</li>
+  <li>入力確定は Enter または Tab</li>
+</ul>
+
+<h3>4-4. 既存データに追記する</h3>
+<p>取り込み時に既存データがある場合は確認ダイアログが表示されます：</p>
+<ul>
+  <li><strong>上書き</strong>: 現在のデータをすべて削除して取り込む</li>
+  <li><strong>追記</strong>: 現在のデータの後ろに追加する</li>
+</ul>
+</section>
+
+<section id="autocomplete">
+<h2>5. 補完機能</h2>
+
+<h3>5-1. 郵便番号を自動入力</h3>
+<p>住所が入力されていて郵便番号が空の行を対象に、インターネット経由で郵便番号を検索・補完します。</p>
+<ol>
+  <li>「<strong>郵便番号を自動入力</strong>」ボタンをクリック</li>
+  <li>自動補完が実行される（インターネット接続が必要）</li>
+  <li>完了後、補完件数と未特定件数が表示される</li>
+</ol>
+<blockquote>郵便番号が特定できなかった行は手動で入力してください。</blockquote>
+
+<h3>5-2. フリガナを自動入力</h3>
+<p>事業所名が入力されていてフリガナが空の行を対象に、カタカナのフリガナを自動生成します。</p>
+<ol>
+  <li>「<strong>フリガナを自動入力</strong>」ボタンをクリック</li>
+  <li>完了後、補完件数が表示される</li>
+</ol>
+<blockquote>株式会社・有限会社などの法人格は除いて変換されます。</blockquote>
+</section>
+
+<section id="export">
+<h2>6. PDF出力</h2>
+
+<h3>出力手順</h3>
+<ol>
+  <li>データを確認する（チェックボックスがオンの行だけ出力されます）</li>
+  <li>画面下部で<strong>用紙</strong>と<strong>フォント</strong>を選択する</li>
+  <li>「<strong>PDF を出力する</strong>」ボタンをクリック</li>
+  <li>保存先とファイル名を指定する</li>
+  <li>出力完了後、PDFを開くか確認ダイアログが表示される</li>
+</ol>
+
+<h3>出力対象の選択</h3>
+<ul>
+  <li>テーブル左端のチェックボックスで行ごとに出力のオン/オフを切り替えられます</li>
+  <li>ヘッダー行のチェックボックスで全行をまとめてオン/オフできます</li>
+  <li><strong>Shift+クリック</strong>で範囲選択ができます</li>
+</ul>
+
+<h3>卓上プレートモードの特記事項</h3>
+<p>A4用紙横長4分割で出力します。上下を逆向きにした2枚が1セットで印刷されるため、半分に折って両面から読めるプレートになります。</p>
+</section>
+
+<section id="paper">
+<h2>7. ラベル用紙・フォントの選択</h2>
+
+<h3>対応用紙一覧</h3>
+<table>
+  <tr><th>用紙名</th><th>サイズ</th><th>配置</th></tr>
+  <tr><td>A-ONE 28185</td><td>70×42.3mm</td><td>3列×6行（18面）</td></tr>
+  <tr><td>A-ONE 28187</td><td>84×42mm</td><td>2列×6行（12面）</td></tr>
+  <tr><td>A-ONE 51002</td><td>91×55mm</td><td>2列×5行（10面・名札）</td></tr>
+  <tr><td>A4 横長4分割</td><td>200×74.25mm</td><td>1列×4行</td></tr>
+</table>
+
+<h3>対応フォント</h3>
+<table>
+  <tr><th>フォント名</th><th>特徴</th></tr>
+  <tr><td>MSPゴシック</td><td>標準ゴシック体（デフォルト）</td></tr>
+  <tr><td>MSP明朝</td><td>明朝体</td></tr>
+  <tr><td>メイリオ</td><td>視認性の高いモダンフォント</td></tr>
+</table>
+</section>
+
+<section id="manage">
+<h2>8. データの管理</h2>
+
+<h3>一覧画面の操作</h3>
+<p>アプリ起動時に表示される一覧画面で、これまでに保存したラベルデータを管理できます。</p>
+<table>
+  <tr><th>操作</th><th>方法</th></tr>
+  <tr><td>編集（再出力）</td><td>行をダブルクリック</td></tr>
+  <tr><td>削除</td><td>「削除」ボタンをクリック</td></tr>
+  <tr><td>複数削除</td><td>チェックボックスで選択 → 「チェックした項目を削除」</td></tr>
+  <tr><td>並び替え</td><td>列ヘッダーをクリック（クリックのたびに昇順/降順が切り替わります）</td></tr>
+</table>
+
+<h3>データの保存場所</h3>
+<p>データベースは以下に保存されます：</p>
+<ul>
+  <li><strong>インストール済み版</strong>: <code>%APPDATA%\LabelIppatsusaku\label_ippatsusaku.db</code></li>
+</ul>
+</section>
+
+<section id="faq">
+<h2>9. よくある質問</h2>
+
+<p><strong>Q. 印刷位置がずれる</strong><br>
+A. お使いのプリンターのプロパティで「実際のサイズ」「拡大縮小なし」に設定してください。PDFビューアーの印刷設定でも「ページに合わせる」ではなく「実際のサイズ」を選択してください。</p>
+
+<p><strong>Q. 郵便番号の自動入力が動かない</strong><br>
+A. インターネット接続が必要です。社内ネットワークのプロキシ設定が原因の場合は、IT担当者にご相談ください。</p>
+
+<p><strong>Q. フリガナが正しく変換されない</strong><br>
+A. 固有名詞や特殊な読みは自動変換が難しいことがあります。変換後のフリガナを手動で修正してください。</p>
+
+<p><strong>Q. 事業所名が長くて1行に収まらない</strong><br>
+A. 事業所名セルを編集して、折り返したい箇所で <strong>Alt+Enter</strong> を入力すると任意の位置で改行できます。</p>
+
+<p><strong>Q. 出力したいデータだけを選びたい</strong><br>
+A. 各行左端のチェックボックスを使って出力対象を選択してください。チェックがオフの行はPDFに出力されませんが、データとして保存はされます。</p>
+
+<p><strong>Q. アプリが自動更新されない</strong><br>
+A. アプリ起動時に上部にアップデート通知が表示されます。通知が表示された場合は案内に従ってインストーラーを実行してください。</p>
+</section>
+
+<p class="version">ラベル一発作成 v1.2.8</p>
+
+</body>
+</html>

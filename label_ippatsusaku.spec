@@ -5,6 +5,7 @@ datas = []
 datas += collect_data_files('pykakasi')
 datas += collect_data_files('reportlab')
 datas += [('assets', 'assets')]
+datas += [('docs/manual/manual.html', 'docs/manual')]
 
 a = Analysis(
     ['main.py'],
