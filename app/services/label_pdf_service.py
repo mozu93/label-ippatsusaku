@@ -27,21 +27,32 @@ from app.utils.customer_barcode import build_barcode_chars, draw_barcode, barcod
 
 # ── フォント登録 ────────────────────────────────────────────────────────
 _FONT_FILES = {
-    "Meiryo":     ("C:/Windows/Fonts/meiryo.ttc",    0),
-    "MSPGothic":  ("C:/Windows/Fonts/msgothic.ttc",  2),
-    "MSPMincho":  ("C:/Windows/Fonts/msmincho.ttc",  1),
+    "Meiryo":        ("C:/Windows/Fonts/meiryo.ttc",           0),
+    "MSPGothic":     ("C:/Windows/Fonts/msgothic.ttc",          2),
+    "MSPMincho":     ("C:/Windows/Fonts/msmincho.ttc",          1),
+    "UDKyokasho":    ("C:/Windows/Fonts/UDDigiKyokashoN-R.ttc", 0),
+    "HGRMaruGothic": ("C:/Windows/Fonts/HGRME.TTC",             0),
 }
+_registered: set[str] = set()
 for _name, (_path, _idx) in _FONT_FILES.items():
     try:
         pdfmetrics.registerFont(TTFont(_name, _path, subfontIndex=_idx))
+        _registered.add(_name)
     except Exception:
         pass
 
-# 選択可能フォント: 表示名 → 内部フォント名
+# 選択可能フォント: 表示名 → 内部フォント名（登録成功分のみ）
+_ALL_FONT_OPTIONS: dict[str, str] = {
+    "MSPゴシック":      "MSPGothic",
+    "MSP明朝":          "MSPMincho",
+    "メイリオ":         "Meiryo",
+    "UD教科書体":       "UDKyokasho",
+    "HGR丸ゴシック":    "HGRMaruGothic",
+}
 FONT_OPTIONS: dict[str, str] = {
-    "MSPゴシック": "MSPGothic",
-    "MSP明朝":    "MSPMincho",
-    "メイリオ":   "Meiryo",
+    label: internal
+    for label, internal in _ALL_FONT_OPTIONS.items()
+    if internal in _registered
 }
 DEFAULT_FONT_KEY = "MSPゴシック"
 
