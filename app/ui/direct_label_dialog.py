@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QCheckBox, QWidget,
 )
 from PyQt6.QtCore import Qt, QEvent
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QBrush, QColor, QKeySequence, QShortcut
 
 from app.database.models import get_session, LabelBatch, LabelEntry
 from app.utils.label_import import (
@@ -29,7 +29,7 @@ from app.services.label_pdf_service import (
     generate_label_pdf, LABEL_LAYOUTS, DEFAULT_LAYOUT_KEY,
     FONT_OPTIONS, DEFAULT_FONT_KEY,
 )
-from app.ui.theme import BTN_PRIMARY, BTN_DANGER, BTN_OUTLINE
+from app.ui.theme import BTN_PRIMARY, BTN_DANGER, BTN_OUTLINE, MODE_RADIO_STYLE
 from app.ui.widgets import CheckableHeader
 from app.utils.app_config import (
     get_label_save_path,
@@ -98,6 +98,12 @@ class ColumnMappingDialog(QDialog):
         "split4":    {"company_name"},
     }
 
+    _FIELD_HINTS: dict[str, str] = {
+        "company_kana": "任意・自動入力可",
+        "title":        "任意",
+        "postal_code":  "任意・自動入力可",
+    }
+
     def __init__(self, headers: list, preview_rows: list, mode: str = "normal", parent=None):
         super().__init__(parent)
         self.setWindowTitle("列の対応を設定")
@@ -142,7 +148,14 @@ class ColumnMappingDialog(QDialog):
             combo = QComboBox()
             combo.addItems(choices)
             required = field_id in self._required
-            suffix = " <span style='color:red'>*</span>" if required else ""
+            hint = self._FIELD_HINTS.get(field_id)
+            if required:
+                suffix = " <span style='color:red'>*</span>"
+            elif hint:
+                suffix = (f" <span style='color:#94A3B8; font-size:11px'>"
+                          f"（{hint}）</span>")
+            else:
+                suffix = ""
             lbl = QLabel(f"{field_label}{suffix}")
             lbl.setTextFormat(Qt.TextFormat.RichText)
             form.addRow(lbl, combo)
@@ -232,6 +245,14 @@ class DirectLabelDialog(QDialog):
     COL_ADDR    = 6
     COL_BC_ADDR = 7
 
+    _REQUIRED_COLS: dict[str, set] = {
+        "normal":    {COL_COMPANY, COL_PERSON, COL_ADDR},
+        "no_person": {COL_COMPANY, COL_ADDR},
+        "simple":    {COL_COMPANY},
+        "nametag":   {COL_COMPANY, COL_PERSON},
+        "split4":    {COL_COMPANY},
+    }
+
     _COLS = [
         ("",              32,  QHeaderView.ResizeMode.Fixed),
         ("事業所名",      200, QHeaderView.ResizeMode.Stretch),
@@ -250,6 +271,7 @@ class DirectLabelDialog(QDialog):
         self._sort_col: int | None = None
         self._sort_asc: bool = True
         self._loading_batch: bool = False
+        self._undo_stack: list = []
         self.setWindowTitle("宛名ラベル 新規作成" if batch_id is None else "宛名ラベル 編集")
         self.setMinimumSize(940, 580)
         self.resize(1020, 640)
@@ -300,6 +322,9 @@ class DirectLabelDialog(QDialog):
         self._radio_simple    = QRadioButton("宛名ラベル（事業所名のみ）")
         self._radio_nametag   = QRadioButton("名札")
         self._radio_split4    = QRadioButton("卓上事業所名プレート")
+        for _rb in (self._radio_normal, self._radio_no_person, self._radio_simple,
+                    self._radio_nametag, self._radio_split4):
+            _rb.setStyleSheet(MODE_RADIO_STYLE)
         self._radio_normal.setChecked(True)
         grp = QButtonGroup(self)
         grp.addButton(self._radio_normal,    0)
@@ -377,8 +402,10 @@ class DirectLabelDialog(QDialog):
         self._split4_banner.setVisible(False)
         root.addWidget(self._split4_banner)
 
-        ops = QHBoxLayout()
-        ops.setSpacing(6)
+        # ── 1行目：取込・編集 ──────────────────────────────────────────
+        ops1 = QHBoxLayout()
+        ops1.setSpacing(6)
+
         btn_paste = QPushButton("貼り付けから取込")
         btn_paste.setFixedHeight(32)
         btn_paste.setStyleSheet(BTN_OUTLINE)
@@ -403,6 +430,31 @@ class DirectLabelDialog(QDialog):
         btn_del.setFixedHeight(32)
         btn_del.setStyleSheet(BTN_DANGER)
         btn_del.clicked.connect(self._del_rows)
+
+        btn_clear = QPushButton("全件クリア")
+        btn_clear.setFixedHeight(32)
+        btn_clear.setStyleSheet(BTN_DANGER)
+        btn_clear.clicked.connect(self._clear_all)
+
+        self._btn_undo = QPushButton("元に戻す")
+        self._btn_undo.setFixedHeight(32)
+        self._btn_undo.setStyleSheet(BTN_OUTLINE)
+        self._btn_undo.setEnabled(False)
+        self._btn_undo.clicked.connect(self._undo)
+        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._undo)
+
+        ops1.addWidget(btn_paste)
+        ops1.addWidget(btn_csv)
+        ops1.addWidget(btn_add)
+        ops1.addWidget(btn_del)
+        ops1.addWidget(btn_clear)
+        ops1.addWidget(self._btn_undo)
+        ops1.addStretch()
+        root.addLayout(ops1)
+
+        # ── 2行目：自動処理 ──────────────────────────────────────────
+        ops2 = QHBoxLayout()
+        ops2.setSpacing(6)
 
         btn_postal = QPushButton("郵便番号を自動入力")
         btn_postal.setFixedHeight(32)
@@ -429,15 +481,11 @@ class DirectLabelDialog(QDialog):
         )
         hint.setStyleSheet("color: #94A3B8; font-size: 11px;")
 
-        ops.addWidget(btn_paste)
-        ops.addWidget(btn_csv)
-        ops.addWidget(btn_add)
-        ops.addWidget(btn_del)
-        ops.addWidget(btn_postal)
-        ops.addWidget(btn_kana)
-        ops.addStretch()
-        ops.addWidget(hint)
-        root.addLayout(ops)
+        ops2.addWidget(btn_postal)
+        ops2.addWidget(btn_kana)
+        ops2.addStretch()
+        ops2.addWidget(hint)
+        root.addLayout(ops2)
 
         self.table = QTableWidget(0, len(self._COLS))
         self._chk_header = CheckableHeader(self.table, initial_checked=True)
@@ -473,6 +521,9 @@ class DirectLabelDialog(QDialog):
         self.table.setColumnHidden(self.COL_BC_ADDR, True)
         self.table.itemChanged.connect(self._on_item_changed)
         root.addWidget(self.table)
+        self._chk_header.set_required_cols(
+            self._REQUIRED_COLS.get("normal", set())
+        )
 
         foot = QHBoxLayout()
         self._count_lbl = QLabel("0 件")
@@ -776,6 +827,90 @@ class DirectLabelDialog(QDialog):
                 return True
         return super().eventFilter(obj, event)
 
+    def _save_undo_snapshot(self):
+        snapshot = []
+        for r in range(self.table.rowCount()):
+            chk = self._get_row_chk(r)
+            vals = [(self.table.item(r, c) or QTableWidgetItem()).text()
+                    for c in range(self.COL_COMPANY, len(self._COLS))]
+            snapshot.append((vals, chk.isChecked() if chk else True))
+        self._undo_stack.append(snapshot)
+        if len(self._undo_stack) > 10:
+            self._undo_stack.pop(0)
+        self._btn_undo.setEnabled(True)
+
+    def _undo(self):
+        if not self._undo_stack:
+            return
+        snapshot = self._undo_stack.pop()
+        self.table.setRowCount(0)
+        self._last_chk_row = None
+        for vals, checked in snapshot:
+            self._add_row(vals)
+            chk = self._get_row_chk(self.table.rowCount() - 1)
+            if chk:
+                chk.blockSignals(True)
+                chk.setChecked(checked)
+                chk.blockSignals(False)
+        self._update_count()
+        self._btn_undo.setEnabled(bool(self._undo_stack))
+
+    def _clear_all(self):
+        if self.table.rowCount() == 0:
+            return
+        reply = QMessageBox.question(
+            self, "全件クリア",
+            f"現在の {self.table.rowCount()} 件のデータをすべて削除しますか？\n"
+            "この操作は「元に戻す」（Ctrl+Z）で取り消せます。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._save_undo_snapshot()
+        self.table.setRowCount(0)
+        self._last_chk_row = None
+        self._update_count()
+
+    def _check_required_and_warn(self, checked_rows: list[int]) -> bool:
+        required = self._REQUIRED_COLS.get(self._current_mode(), set())
+        if not required:
+            return True
+        bad = []
+        for row in checked_rows:
+            missing = [self._COLS[col][0] for col in required
+                       if not (self.table.item(row, col) and
+                               self.table.item(row, col).text().strip())]
+            if missing:
+                company = (self.table.item(row, self.COL_COMPANY) or
+                           QTableWidgetItem()).text().strip() or "（空白）"
+                bad.append(f"行 {row + 1}　{company}：{', '.join(missing)} が未入力")
+        if not bad:
+            return True
+        detail = "\n".join(bad[:15])
+        if len(bad) > 15:
+            detail += f"\n… 他 {len(bad) - 15} 件"
+        reply = QMessageBox.warning(
+            self, "必須項目が未入力の行があります",
+            f"以下の行に必須項目の未入力があります。\n\n{detail}\n\n"
+            "このまま出力しますか？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    def _apply_required_bg_to_row(self, row: int):
+        required = self._REQUIRED_COLS.get(self._current_mode(), set())
+        pink = QBrush(QColor("#FFF0F3"))
+        for col in range(self.COL_COMPANY, self.COL_BC_ADDR):
+            item = self.table.item(row, col)
+            if item:
+                item.setBackground(pink if col in required else QBrush())
+
+    def _update_required_highlights(self):
+        required = self._REQUIRED_COLS.get(self._current_mode(), set())
+        self._chk_header.set_required_cols(required)
+        for row in range(self.table.rowCount()):
+            self._apply_required_bg_to_row(row)
+
     def _on_mode_toggled(self, checked: bool):
         if not checked:
             return
@@ -793,6 +928,7 @@ class DirectLabelDialog(QDialog):
             idx = self._layout_combo.findData(DEFAULT_LAYOUT_KEY)
         if idx >= 0:
             self._layout_combo.setCurrentIndex(idx)
+        self._update_required_highlights()
 
     def _current_mode(self) -> str:
         if self._radio_no_person.isChecked():
@@ -821,10 +957,14 @@ class DirectLabelDialog(QDialog):
             item = QTableWidgetItem(values[offset] if values and offset < len(values) else "")
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, col, item)
+        self._apply_required_bg_to_row(row)
         self._update_count()
 
     def _del_rows(self):
         rows = sorted({i.row() for i in self.table.selectedItems()}, reverse=True)
+        if not rows:
+            return
+        self._save_undo_snapshot()
         for r in rows:
             self.table.removeRow(r)
         self._update_count()
@@ -842,6 +982,7 @@ class DirectLabelDialog(QDialog):
             QMessageBox.information(self, "取込結果", "取込可能なデータがありませんでした。")
             return
 
+        do_clear = False
         if self.table.rowCount() > 0:
             reply = QMessageBox.question(
                 self, "取込方法の確認",
@@ -852,9 +993,12 @@ class DirectLabelDialog(QDialog):
             )
             if reply == QMessageBox.StandardButton.Cancel:
                 return
-            if reply == QMessageBox.StandardButton.Yes:
-                self.table.setRowCount(0)
-                self._last_chk_row = None
+            do_clear = (reply == QMessageBox.StandardButton.Yes)
+
+        self._save_undo_snapshot()
+        if do_clear:
+            self.table.setRowCount(0)
+            self._last_chk_row = None
 
         for dr in direct_rows:
             self._add_row([
@@ -955,6 +1099,9 @@ class DirectLabelDialog(QDialog):
             QMessageBox.warning(self, "出力対象なし",
                                 "チェックされたデータがありません。\n"
                                 "出力したい行にチェックを入れてください。")
+            return
+
+        if not self._check_required_and_warn(checked_rows):
             return
 
         # 全行をDBに保存（sort_order = テーブル行インデックス）

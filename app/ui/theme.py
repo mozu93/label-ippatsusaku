@@ -153,6 +153,19 @@ def status_badge(color: str, bg: str) -> str:
         f"font-family: '{FONT_FAMILY}';"
     )
 
+# ── モード選択ラジオボタン（インジケーターのみ塗りつぶし） ──────────
+MODE_RADIO_STYLE = (
+    f"QRadioButton {{"
+    f"  font-size: 12px; font-family: '{FONT_FAMILY}'; spacing: 6px; }}"
+    f"QRadioButton::indicator {{"
+    f"  width: 14px; height: 14px; border-radius: 7px; "
+    f"  border: 2px solid {C_BORDER_DARK}; background: white; }}"
+    f"QRadioButton::indicator:checked {{"
+    f"  background: {C_PRIMARY}; border-color: {C_PRIMARY}; }}"
+    f"QRadioButton::indicator:hover {{"
+    f"  border-color: {C_PRIMARY}; }}"
+)
+
 # ── 情報バナー ─────────────────────────────────────────────────────
 INFO_BANNER = (
     f"background: {C_PRIMARY_LIGHT}; border: 1px solid #BFDBFE; "

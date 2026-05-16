@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from PyQt6.QtWidgets import QHeaderView, QStyle, QStyleOptionButton
 from PyQt6.QtCore import Qt, pyqtSignal, QRect
+from PyQt6.QtGui import QColor
 
 MODE_LABEL: dict[str, str] = {
     "normal":    "宛名(氏名あり)",
@@ -19,16 +20,27 @@ class CheckableHeader(QHeaderView):
     def __init__(self, parent=None, initial_checked: bool = False):
         super().__init__(Qt.Orientation.Horizontal, parent)
         self._checked = initial_checked
+        self._required_cols: set = set()
         self.setSectionsClickable(True)
 
     def set_checked(self, checked: bool):
         self._checked = checked
         self.viewport().update()
 
+    def set_required_cols(self, cols: set):
+        self._required_cols = cols
+        self.viewport().update()
+
     def paintSection(self, painter, rect, logical_index):
         painter.save()
         super().paintSection(painter, rect, logical_index)
         painter.restore()
+        if logical_index in self._required_cols:
+            painter.save()
+            c = QColor("#FF6B8A")
+            c.setAlpha(55)
+            painter.fillRect(rect.adjusted(1, 2, -1, 0), c)
+            painter.restore()
         if logical_index == 0:
             opt = QStyleOptionButton()
             cb = 14

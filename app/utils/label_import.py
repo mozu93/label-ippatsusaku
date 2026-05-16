@@ -65,6 +65,14 @@ def _normalize(text: str) -> str:
     return text
 
 
+def _strip_excel_formula(value: str) -> str:
+    """Excel の ="..." 形式（文字列強制）を取り除く。="510-0211" → 510-0211"""
+    v = value.strip()
+    if len(v) >= 3 and v.startswith('="') and v.endswith('"'):
+        return v[2:-1]
+    return v
+
+
 # ──────────────────────────────────────────────
 #  パーサー
 # ──────────────────────────────────────────────
@@ -207,8 +215,9 @@ def _extract_direct_row(row_dict: dict) -> DirectRow:
     def _pick(keys):
         for k in keys:
             v = norm.get(_normalize(k), "")
-            if v.strip():
-                return v.strip()
+            v = _strip_excel_formula(v)
+            if v:
+                return v
         return ""
 
     return DirectRow(
@@ -250,7 +259,7 @@ def parse_raw_clipboard(text: str) -> tuple[list[str], list[list[str]]]:
     if not lines:
         return [], []
 
-    all_rows = [[c.strip() for c in line.split("\t")] for line in lines]
+    all_rows = [[_strip_excel_formula(c) for c in line.split("\t")] for line in lines]
     ncols = max(len(r) for r in all_rows)
 
     first_cols = all_rows[0]
@@ -332,8 +341,8 @@ def parse_raw_csv_bytes(data: bytes) -> tuple[list[str], list[list[str]]]:
     if not all_rows:
         return [], []
 
-    headers = [h.strip() for h in all_rows[0]]
-    data_rows = [[cell.strip() for cell in row] for row in all_rows[1:]]
+    headers = [_strip_excel_formula(h) for h in all_rows[0]]
+    data_rows = [[_strip_excel_formula(cell) for cell in row] for row in all_rows[1:]]
     ncols = len(headers)
     data_rows = [row + [""] * (ncols - len(row)) for row in data_rows]
     return headers, data_rows
