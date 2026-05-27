@@ -1,44 +1,58 @@
 # -*- coding: utf-8 -*-
 """
-アプリ共通デザイントークン
-全UIファイルでこのモジュールをインポートして使用する。
+アプリ共通デザイントークン — v2 (2026 single-accent palette)
+
+方針:
+  ・アクセントカラーは primary blue 1色のみ
+  ・破壊操作は red (danger) のみ
+  ・それ以外は warm neutral (gray-50/200/500 系) で統一
+  ・背景はハーシュな純白を避け F9FAFB (gray-50) を基調とする
 """
 from PyQt6.QtGui import QFont
 
-# ── カラー ─────────────────────────────────────────────────────────
-C_PRIMARY        = "#1565C0"
-C_PRIMARY_HOVER  = "#1976D2"
-C_PRIMARY_LIGHT  = "#EFF6FF"
+# ── Primary accent ──────────────────────────────────────────────────
+C_PRIMARY        = "#2563EB"   # blue-600
+C_PRIMARY_HOVER  = "#1D4ED8"   # blue-700
+C_PRIMARY_LIGHT  = "#EFF6FF"   # blue-50  (背景・ハイライト用)
+C_PRIMARY_BORDER = "#BFDBFE"   # blue-200 (フォーカスリング・バナー枠)
 
-C_SUCCESS        = "#2E7D32"
-C_SUCCESS_HOVER  = "#388E3C"
+# ── Danger ──────────────────────────────────────────────────────────
+C_DANGER         = "#DC2626"   # red-600
+C_DANGER_HOVER   = "#B91C1C"   # red-700
 
-C_DANGER         = "#D32F2F"
-C_DANGER_HOVER   = "#C62828"
+# ── Status (バッジ・状態表示専用。UIアクションには使わない) ──────────
+C_SUCCESS        = "#16A34A"   # green-600
+C_SUCCESS_HOVER  = "#15803D"   # green-700
+C_SUCCESS_BG     = "#F0FDF4"   # green-50
+C_SUCCESS_BORDER = "#86EFAC"   # green-300
 
-C_WARNING        = "#E65100"
-C_WARNING_HOVER  = "#BF360C"
+C_WARNING        = "#D97706"   # amber-600 (通知バナー等)
+C_WARNING_HOVER  = "#B45309"   # amber-700
 
-C_SECONDARY      = "#475569"
-C_SECONDARY_HOVER = "#334155"
+# ── Neutral (アイコンの legacy マッピング含む) ────────────────────────
+C_SECONDARY       = "#6B7280"   # gray-500
+C_SECONDARY_HOVER = "#4B5563"   # gray-600
 
-C_TEAL           = "#00838F"
-C_TEAL_HOVER     = "#00ACC1"
+# 旧 Teal / Purple は Primary に統合 (import互換のためエイリアスを残す)
+C_TEAL            = C_PRIMARY
+C_TEAL_HOVER      = C_PRIMARY_HOVER
+C_PURPLE          = C_PRIMARY
+C_PURPLE_HOVER    = C_PRIMARY_HOVER
 
-C_PURPLE         = "#6A1B9A"
-C_PURPLE_HOVER   = "#7B1FA2"
+# ── Neutrals ────────────────────────────────────────────────────────
+C_BG              = "#F9FAFB"   # gray-50  (app background)
+C_BG_ALT          = "#F3F4F6"   # gray-100 (alternate rows)
+C_SURFACE         = "#FFFFFF"
+C_BORDER          = "#E5E7EB"   # gray-200
+C_BORDER_DARK     = "#D1D5DB"   # gray-300
 
-C_BG             = "#F8FAFC"
-C_SURFACE        = "#FFFFFF"
-C_BORDER         = "#E2E8F0"
-C_BORDER_DARK    = "#CBD5E1"
+# ── Typography ──────────────────────────────────────────────────────
+C_TEXT            = "#111827"   # gray-900
+C_TEXT_SUB        = "#6B7280"   # gray-500
+C_TEXT_MUTED      = "#9CA3AF"   # gray-400
+C_TEXT_LINK       = C_PRIMARY
 
-C_TEXT           = "#1E293B"
-C_TEXT_SUB       = "#64748B"
-C_TEXT_MUTED     = "#94A3B8"
-C_TEXT_LINK      = C_PRIMARY
-
-# ── タイポグラフィ ──────────────────────────────────────────────────
+# ── Font ─────────────────────────────────────────────────────────────
 FONT_FAMILY = "Meiryo UI"
 
 def font_page_title() -> QFont:
@@ -50,25 +64,25 @@ def font_section_title() -> QFont:
 def font_body() -> QFont:
     return QFont(FONT_FAMILY, 13)
 
-# ── スペーシング ───────────────────────────────────────────────────
-PAGE_MARGIN      = (24, 20, 24, 20)   # left, top, right, bottom
-SECTION_SPACING  = 16
-FORM_SPACING     = 10
+# ── Spacing ──────────────────────────────────────────────────────────
+PAGE_MARGIN     = (24, 20, 24, 20)
+SECTION_SPACING = 16
+FORM_SPACING    = 10
 
-# ── コンポーネントサイズ ───────────────────────────────────────────
-BTN_H            = 36   # 通常ボタン高さ
-BTN_H_SM         = 28   # テーブル内ボタン高さ
-INPUT_H          = 34   # 入力欄高さ
-ROW_H            = 36   # テーブル行高さ
+# ── Component sizes ──────────────────────────────────────────────────
+BTN_H    = 36
+BTN_H_SM = 28
+INPUT_H  = 34
+ROW_H    = 36
 
-# ── ボタンスタイル ──────────────────────────────────────────────────
+# ── Button styles ────────────────────────────────────────────────────
 def _btn(bg: str, hover: str, text: str = "white") -> str:
     return (
-        f"QPushButton {{ background: {bg}; color: {text}; border-radius: 4px; "
+        f"QPushButton {{ background: {bg}; color: {text}; border-radius: 5px; "
         f"border: none; font-size: 13px; font-family: '{FONT_FAMILY}'; "
         f"padding: 0 16px; }}"
         f"QPushButton:hover {{ background: {hover}; }}"
-        f"QPushButton:disabled {{ background: #B0BEC5; color: #ECEFF1; }}"
+        f"QPushButton:disabled {{ background: {C_BG_ALT}; color: {C_TEXT_MUTED}; }}"
     )
 
 BTN_PRIMARY   = _btn(C_PRIMARY,   C_PRIMARY_HOVER)
@@ -76,30 +90,32 @@ BTN_SUCCESS   = _btn(C_SUCCESS,   C_SUCCESS_HOVER)
 BTN_DANGER    = _btn(C_DANGER,    C_DANGER_HOVER)
 BTN_WARNING   = _btn(C_WARNING,   C_WARNING_HOVER)
 BTN_SECONDARY = _btn(C_SECONDARY, C_SECONDARY_HOVER)
-BTN_TEAL      = _btn(C_TEAL,      C_TEAL_HOVER)
-BTN_PURPLE    = _btn(C_PURPLE,    C_PURPLE_HOVER)
+BTN_TEAL      = BTN_PRIMARY   # alias
+BTN_PURPLE    = BTN_PRIMARY   # alias
 
-# ゴーストボタン（枠線あり・背景透明）
+# Ghost button（枠線あり・背景透明）
 BTN_GHOST = (
     f"QPushButton {{ background: transparent; color: {C_SECONDARY}; "
-    f"border: 1px solid {C_BORDER_DARK}; border-radius: 4px; "
+    f"border: 1px solid {C_BORDER_DARK}; border-radius: 5px; "
     f"font-size: 13px; font-family: '{FONT_FAMILY}'; padding: 0 14px; }}"
-    f"QPushButton:hover {{ background: {C_BG}; color: {C_TEXT}; }}"
+    f"QPushButton:hover {{ background: {C_BG}; color: {C_TEXT}; "
+    f"border-color: {C_BORDER_DARK}; }}"
+    f"QPushButton:disabled {{ color: {C_TEXT_MUTED}; border-color: {C_BORDER}; }}"
 )
 
-# アウトラインボタン（白地・青枠・青文字）
+# Outline button（白地・blue枠・blue文字）
 BTN_OUTLINE = (
     f"QPushButton {{ background: white; color: {C_PRIMARY}; "
-    f"border: 1px solid {C_PRIMARY}; border-radius: 4px; "
-    f"font-size: 13px; font-family: '{FONT_FAMILY}'; padding: 0 20px; }}"
+    f"border: 1px solid {C_PRIMARY}; border-radius: 5px; "
+    f"font-size: 13px; font-family: '{FONT_FAMILY}'; padding: 0 16px; }}"
     f"QPushButton:hover {{ background: {C_PRIMARY_LIGHT}; }}"
-    f"QPushButton:disabled {{ color: #BDBDBD; border-color: #BDBDBD; }}"
+    f"QPushButton:disabled {{ color: {C_TEXT_MUTED}; border-color: {C_BORDER_DARK}; }}"
 )
 
-# ── 入力欄スタイル ──────────────────────────────────────────────────
+# ── Input style ──────────────────────────────────────────────────────
 INPUT_STYLE = (
     f"QLineEdit, QComboBox, QDateEdit, QSpinBox {{"
-    f"  border: 1px solid {C_BORDER_DARK}; border-radius: 4px; "
+    f"  border: 1px solid {C_BORDER_DARK}; border-radius: 5px; "
     f"  padding: 2px 8px; font-size: 13px; font-family: '{FONT_FAMILY}'; "
     f"  background: white; color: {C_TEXT}; }}"
     f"QLineEdit:focus, QComboBox:focus, QDateEdit:focus {{"
@@ -107,16 +123,16 @@ INPUT_STYLE = (
     f"QLineEdit:read-only {{ background: {C_BG}; color: {C_TEXT_SUB}; }}"
 )
 
-# ── テーブルスタイル ───────────────────────────────────────────────
+# ── Table style ──────────────────────────────────────────────────────
 TABLE_STYLE = (
     f"QTableWidget {{"
     f"  border: 1px solid {C_BORDER}; border-radius: 6px; "
-    f"  background: white; gridline-color: #F1F5F9; "
+    f"  background: white; gridline-color: {C_BG_ALT}; "
     f"  font-size: 13px; font-family: '{FONT_FAMILY}'; }}"
     f"QTableWidget::item {{ padding: 4px 8px; color: {C_TEXT}; }}"
     f"QTableWidget::item:selected {{ background: {C_PRIMARY_LIGHT}; color: {C_TEXT}; }}"
-    f"QTableWidget::item:hover {{ background: #BBDEFB; color: {C_TEXT}; }}"
-    f"QTableWidget::item:alternate {{ background: #FAFBFC; }}"
+    f"QTableWidget::item:hover {{ background: #DBEAFE; color: {C_TEXT}; }}"  # blue-100
+    f"QTableWidget::item:alternate {{ background: {C_BG_ALT}; }}"
     f"QHeaderView::section {{"
     f"  background: {C_BG}; border: none; "
     f"  border-bottom: 2px solid {C_BORDER}; "
@@ -124,28 +140,39 @@ TABLE_STYLE = (
     f"  font-size: 12px; font-family: '{FONT_FAMILY}'; padding: 6px 8px; }}"
     f"QTableWidget::indicator {{ width: 15px; height: 15px; }}"
     f"QTableWidget::indicator:unchecked {{"
-    f"  border: 2px solid #94A3B8; border-radius: 3px; background: white; }}"
+    f"  border: 2px solid {C_BORDER_DARK}; border-radius: 3px; background: white; }}"
     f"QTableWidget::indicator:checked {{"
     f"  border: 2px solid {C_PRIMARY}; border-radius: 3px; background: {C_PRIMARY}; }}"
-    f"QTableWidget::indicator:unchecked:hover {{"
-    f"  border-color: {C_PRIMARY}; }}"
+    f"QTableWidget::indicator:unchecked:hover {{ border-color: {C_PRIMARY}; }}"
 )
 
-# ── ページタイトルラベルスタイル ───────────────────────────────────
+# ── Labels ───────────────────────────────────────────────────────────
 PAGE_TITLE_STYLE = f"color: {C_TEXT}; font-family: '{FONT_FAMILY}';"
 
-# ── フィルターバースタイル ─────────────────────────────────────────
 FILTER_BAR_STYLE = (
     f"background: {C_SURFACE}; border: 1px solid {C_BORDER}; "
     f"border-radius: 6px; padding: 4px 0;"
 )
 
-# ── カードパネルスタイル ───────────────────────────────────────────
 CARD_STYLE = (
-    f"background: {C_SURFACE}; border: 1px solid {C_BORDER}; border-radius: 6px;"
+    f"background: {C_SURFACE}; border: 1px solid {C_BORDER}; border-radius: 8px;"
 )
 
-# ── バッジ/ステータスラベル ────────────────────────────────────────
+# ── Banner styles (info / warn) ───────────────────────────────────────
+# 全モードバナーを統一：単一の neutral-blue info スタイル
+INFO_BANNER = (
+    f"background: {C_PRIMARY_LIGHT}; border: 1px solid {C_PRIMARY_BORDER}; "
+    f"border-radius: 6px; padding: 6px 12px; "
+    f"font-size: 11px; color: #1E40AF; font-family: '{FONT_FAMILY}';"   # blue-800
+)
+
+WARN_BANNER = (
+    f"background: #FFFBEB; border: 1px solid #FCD34D; "
+    f"border-radius: 6px; padding: 6px 12px; "
+    f"font-size: 11px; color: #92400E; font-family: '{FONT_FAMILY}';"
+)
+
+# ── Badge ────────────────────────────────────────────────────────────
 def status_badge(color: str, bg: str) -> str:
     return (
         f"color: {color}; background: {bg}; border-radius: 3px; "
@@ -153,7 +180,7 @@ def status_badge(color: str, bg: str) -> str:
         f"font-family: '{FONT_FAMILY}';"
     )
 
-# ── モード選択ラジオボタン（インジケーターのみ塗りつぶし） ──────────
+# ── Radio button (legacy) ─────────────────────────────────────────────
 MODE_RADIO_STYLE = (
     f"QRadioButton {{"
     f"  font-size: 12px; font-family: '{FONT_FAMILY}'; spacing: 6px; }}"
@@ -162,19 +189,5 @@ MODE_RADIO_STYLE = (
     f"  border: 2px solid {C_BORDER_DARK}; background: white; }}"
     f"QRadioButton::indicator:checked {{"
     f"  background: {C_PRIMARY}; border-color: {C_PRIMARY}; }}"
-    f"QRadioButton::indicator:hover {{"
-    f"  border-color: {C_PRIMARY}; }}"
-)
-
-# ── 情報バナー ─────────────────────────────────────────────────────
-INFO_BANNER = (
-    f"background: {C_PRIMARY_LIGHT}; border: 1px solid #BFDBFE; "
-    f"border-radius: 4px; padding: 8px 12px; "
-    f"font-size: 12px; color: #1E40AF; font-family: '{FONT_FAMILY}';"
-)
-
-WARN_BANNER = (
-    f"background: #FFF7ED; border: 1px solid #FED7AA; "
-    f"border-radius: 4px; padding: 8px 12px; "
-    f"font-size: 12px; color: #9A3412; font-family: '{FONT_FAMILY}';"
+    f"QRadioButton::indicator:hover {{ border-color: {C_PRIMARY}; }}"
 )

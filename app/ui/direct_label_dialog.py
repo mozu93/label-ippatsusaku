@@ -80,7 +80,7 @@ class _MultilineDelegate(QStyledItemDelegate):
         editor = QPlainTextEdit(parent)
         editor.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         editor.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        editor.setStyleSheet("background: white; border: 1px solid #1565C0;")
+        editor.setStyleSheet("background: white; border: 1px solid #2563EB;")
         return editor
 
     def setEditorData(self, editor, index):
@@ -346,9 +346,9 @@ class DirectLabelDialog(QDialog):
         self._data_name_edit.setPlaceholderText("例）〇〇部会、〇〇視察研修会")
         self._data_name_edit.setFixedHeight(34)
         self._data_name_edit.setStyleSheet(
-            "QLineEdit { border: 1px solid #CBD5E1; border-radius: 4px; "
+            "QLineEdit { border: 1px solid #D1D5DB; border-radius: 5px; "
             "padding: 0 8px; font-size: 13px; }"
-            "QLineEdit:focus { border-color: #1565C0; }"
+            "QLineEdit:focus { border-color: #2563EB; }"
         )
         name_row.addWidget(name_lbl)
         name_row.addWidget(self._data_name_edit)
@@ -361,8 +361,8 @@ class DirectLabelDialog(QDialog):
         mode_lbl.setFixedWidth(44)
 
         # ── セグメントボタン（チェッカブル QPushButton） ──────────────
-        _C   = "#1565C0"   # primary color
-        _CH  = "#1976D2"   # hover
+        _C   = "#2563EB"   # primary color
+        _CH  = "#1D4ED8"   # hover
         _SEG_H = 30        # ボタン高さ
 
         def _seg(label: str, pos: str) -> QPushButton:
@@ -429,16 +429,20 @@ class DirectLabelDialog(QDialog):
         top_form.addStretch()
         root.addLayout(top_form)
 
+        # 全モードバナーを単一の neutral-blue info スタイルで統一
+        _MODE_BANNER = (
+            "background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; "
+            "border-radius: 6px; padding: 6px 12px; font-size: 11px; "
+            "font-family: 'Meiryo UI';"
+        )
+
         self._normal_banner = QLabel(
-            "事業所名、郵便番号、住所、所属・役職　氏名をExcelからコピーするか、"
-            "CSVデータを取り込んでください。"
+            "事業所名、郵便番号、住所、所属・役職、氏名を Excel からコピーするか、"
+            "CSV ファイルで取り込んでください。"
             "郵便番号がわからない場合は住所から変換できます。（要インターネット接続）"
         )
         self._normal_banner.setWordWrap(True)
-        self._normal_banner.setStyleSheet(
-            "background: #F0FDF4; color: #166534; border: 1px solid #86EFAC; "
-            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
-        )
+        self._normal_banner.setStyleSheet(_MODE_BANNER)
         self._normal_banner.setVisible(True)
         root.addWidget(self._normal_banner)
 
@@ -447,41 +451,32 @@ class DirectLabelDialog(QDialog):
             "「御中」が自動的に付きます。"
         )
         self._no_person_banner.setWordWrap(True)
-        self._no_person_banner.setStyleSheet(
-            "background: #F0FDF4; color: #166534; border: 1px solid #86EFAC; "
-            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
-        )
+        self._no_person_banner.setStyleSheet(_MODE_BANNER)
         self._no_person_banner.setVisible(False)
         root.addWidget(self._no_person_banner)
 
         self._simple_banner = QLabel(
-            "企業名のみ出力されます。住所・肩書・氏名は印刷されません。"
+            "事業所名のみ出力されます。住所・肩書・氏名は印刷されません。"
         )
-        self._simple_banner.setStyleSheet(
-            "background: #FFF3E0; color: #E65100; border: 1px solid #FFB74D; "
-            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
-        )
+        self._simple_banner.setWordWrap(True)
+        self._simple_banner.setStyleSheet(_MODE_BANNER)
         self._simple_banner.setVisible(False)
         root.addWidget(self._simple_banner)
 
         self._nametag_banner = QLabel(
             "事業所名、所属・役職、氏名を名刺サイズで出力します。"
         )
-        self._nametag_banner.setStyleSheet(
-            "background: #EFF6FF; color: #1D4ED8; border: 1px solid #BFDBFE; "
-            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
-        )
+        self._nametag_banner.setWordWrap(True)
+        self._nametag_banner.setStyleSheet(_MODE_BANNER)
         self._nametag_banner.setVisible(False)
         root.addWidget(self._nametag_banner)
 
         self._split4_banner = QLabel(
-            "事業所名をA4用紙横長４分割したサイズで均等割付して出力します。"
+            "事業所名を A4 用紙横長４分割で均等割付して出力します。"
             "上下回転させた事業所名を同時出力するので半分に折って使用します。"
         )
-        self._split4_banner.setStyleSheet(
-            "background: #F0FDF4; color: #166534; border: 1px solid #86EFAC; "
-            "border-radius: 4px; padding: 6px 12px; font-size: 11px;"
-        )
+        self._split4_banner.setWordWrap(True)
+        self._split4_banner.setStyleSheet(_MODE_BANNER)
         self._split4_banner.setVisible(False)
         root.addWidget(self._split4_banner)
 
@@ -490,19 +485,19 @@ class DirectLabelDialog(QDialog):
         toolbar.setSpacing(4)
 
         # ツールバー専用ボタンスタイル（パディング小さめ）
-        _C = "#1565C0"
+        _C = "#2563EB"
         _CL = "#EFF6FF"
         _TB_OUTLINE = (
             f"QPushButton {{ background: white; color: {_C}; "
-            f"border: 1px solid {_C}; border-radius: 4px; "
+            f"border: 1px solid {_C}; border-radius: 5px; "
             f"font-size: 12px; font-family: 'Meiryo UI'; padding: 0 10px; }}"
             f"QPushButton:hover {{ background: {_CL}; }}"
-            f"QPushButton:disabled {{ color: #BDBDBD; border-color: #BDBDBD; }}"
+            f"QPushButton:disabled {{ color: #9CA3AF; border-color: #D1D5DB; }}"
         )
         _TB_DANGER = (
-            "QPushButton { background: #D32F2F; color: white; border-radius: 4px; "
+            "QPushButton { background: #DC2626; color: white; border-radius: 5px; "
             "border: none; font-size: 12px; font-family: 'Meiryo UI'; padding: 0 10px; }"
-            "QPushButton:hover { background: #C62828; }"
+            "QPushButton:hover { background: #B91C1C; }"
         )
 
         def _tb(label: str, style: str = _TB_OUTLINE) -> QPushButton:
@@ -639,7 +634,7 @@ class DirectLabelDialog(QDialog):
 
         self._save_path_lbl = QLabel()
         self._save_path_lbl.setStyleSheet(
-            "font-size: 12px; color: #1565C0; "
+            "font-size: 12px; color: #2563EB; "
             "text-decoration: underline; cursor: pointer;"
         )
         self._save_path_lbl.setToolTip("クリックしてフォルダを変更")
@@ -759,11 +754,11 @@ class DirectLabelDialog(QDialog):
     def _update_step(self, active: int):
         """active: 現在のステップ番号（1〜4）。それ以前は完了、それ以降は未着手スタイル"""
         styles = {
-            "done":    ("background:#DCFCE7; color:#166534; border-radius:4px;"
+            "done":    ("background:#DCFCE7; color:#166534; border-radius:5px;"
                         "font-size:12px; font-family:'Meiryo UI'; padding:0 10px;"),
-            "active":  ("background:#1565C0; color:white; border-radius:4px;"
+            "active":  ("background:#2563EB; color:white; border-radius:5px;"
                         "font-size:12px; font-weight:bold; font-family:'Meiryo UI'; padding:0 10px;"),
-            "pending": ("background:#F1F5F9; color:#94A3B8; border-radius:4px;"
+            "pending": ("background:#F3F4F6; color:#9CA3AF; border-radius:5px;"
                         "font-size:12px; font-family:'Meiryo UI'; padding:0 10px;"),
         }
         for i, lbl in enumerate(self._step_labels):

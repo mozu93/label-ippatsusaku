@@ -63,9 +63,9 @@ class UpdateBanner(QWidget):
         self._btn_dl = QPushButton("ダウンロード")
         self._btn_dl.setFixedHeight(28)
         self._btn_dl.setStyleSheet(
-            "QPushButton { background: #1565C0; color: white; border-radius: 4px; "
+            "QPushButton { background: #2563EB; color: white; border-radius: 5px; "
             "padding: 0 12px; font-size: 12px; }"
-            "QPushButton:hover { background: #1976D2; }"
+            "QPushButton:hover { background: #1D4ED8; }"
         )
         self._btn_dl.clicked.connect(self._start_download)
 
@@ -76,9 +76,9 @@ class UpdateBanner(QWidget):
         self._btn_install = QPushButton("今すぐ更新して再起動")
         self._btn_install.setFixedHeight(28)
         self._btn_install.setStyleSheet(
-            "QPushButton { background: #2E7D32; color: white; border-radius: 4px; "
+            "QPushButton { background: #16A34A; color: white; border-radius: 5px; "
             "padding: 0 12px; font-size: 12px; }"
-            "QPushButton:hover { background: #388E3C; }"
+            "QPushButton:hover { background: #15803D; }"
         )
         self._btn_install.setVisible(False)
         self._btn_install.clicked.connect(self._install)

@@ -10,9 +10,9 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QStyle, QStyleOptionButton, QApplication,
-    QLineEdit, QComboBox, QStackedWidget,
+    QLineEdit, QComboBox, QStackedWidget, QFrame,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 
 from app.database.models import get_session, LabelBatch
@@ -21,7 +21,10 @@ from app.ui.theme import (
     BTN_PRIMARY, BTN_DANGER, BTN_OUTLINE,
     TABLE_STYLE, PAGE_TITLE_STYLE, PAGE_MARGIN,
     C_TEXT_SUB, BTN_H, BTN_H_SM, ROW_H,
-    font_page_title, C_SUCCESS,
+    font_page_title, C_SUCCESS, C_SUCCESS_HOVER,
+    C_PRIMARY, C_PRIMARY_HOVER, C_PRIMARY_LIGHT, C_PRIMARY_BORDER,
+    C_BORDER, C_BORDER_DARK, C_TEXT, C_TEXT_MUTED, C_BG,
+    FONT_FAMILY,
 )
 from app.ui.widgets import CheckableHeader, MODE_LABEL
 
@@ -32,6 +35,67 @@ COL_CNT  = 3
 COL_MODE = 4
 COL_DATE = 5
 COL_OPS  = 6
+
+
+class _ModeCard(QFrame):
+    """モード選択カード。アイコン（大）＋ラベル（小）の2段構成。"""
+
+    clicked = pyqtSignal(str)   # 引数: mode キー
+
+    _STYLE_NORMAL = (
+        f"QFrame {{ background: white; border: 1.5px solid {C_BORDER}; "
+        f"border-radius: 10px; }}"
+    )
+    _STYLE_HOVER = (
+        f"QFrame {{ background: {C_PRIMARY_LIGHT}; border: 1.5px solid {C_PRIMARY}; "
+        f"border-radius: 10px; }}"
+    )
+
+    def __init__(self, icon: str, label: str, mode: str, parent=None):
+        super().__init__(parent)
+        self._mode = mode
+        self.setFixedSize(136, 92)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(self._STYLE_NORMAL)
+
+        vbox = QVBoxLayout(self)
+        vbox.setContentsMargins(6, 10, 6, 8)
+        vbox.setSpacing(5)
+        vbox.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # アイコンラベル（大）
+        icon_lbl = QLabel(icon)
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_lbl.setStyleSheet(
+            "font-size: 30px; background: transparent; border: none;"
+        )
+        icon_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+        # テキストラベル（小）
+        text_lbl = QLabel(label)
+        text_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        text_lbl.setWordWrap(True)
+        text_lbl.setStyleSheet(
+            f"font-size: 11px; color: #374151; background: transparent; "
+            f"border: none; font-family: '{FONT_FAMILY}';"
+        )
+        text_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+        vbox.addWidget(icon_lbl)
+        vbox.addWidget(text_lbl)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self._mode)
+        super().mousePressEvent(event)
+
+    def enterEvent(self, event):
+        self.setStyleSheet(self._STYLE_HOVER)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setStyleSheet(self._STYLE_NORMAL)
+        super().leaveEvent(event)
 
 
 class LabelListWidget(QWidget):
@@ -76,26 +140,16 @@ class LabelListWidget(QWidget):
         cards_row.setSpacing(8)
 
         _CARDS = [
-            ("📬", "宛名ラベル\n（氏名あり）",   "normal",    "#EFF6FF", "#1565C0"),
-            ("📮", "宛名ラベル\n（氏名なし）",   "no_person", "#EFF6FF", "#1565C0"),
-            ("🏢", "事業所名のみ",               "simple",    "#F0FDF4", "#2E7D32"),
-            ("🪪", "名札",                       "nametag",   "#FFF7ED", "#C2410C"),
-            ("🪧", "卓上プレート",               "split4",    "#FAF5FF", "#6D28D9"),
+            ("✉",  "宛名ラベル\n氏名あり",   "normal"),
+            ("📮", "宛名ラベル\n氏名なし",   "no_person"),
+            ("🏢", "事業所名のみ",            "simple"),
+            ("🪪", "名札",                    "nametag"),
+            ("🪧", "卓上プレート",            "split4"),
         ]
 
-        for icon, label, mode, bg, fg in _CARDS:
-            card = QPushButton(f"{icon}\n{label}")
-            card.setFixedHeight(72)
-            card.setFixedWidth(130)
-            card.setStyleSheet(
-                f"QPushButton {{ background: {bg}; color: {fg}; "
-                f"border: 1px solid {fg}44; border-radius: 8px; "
-                f"font-size: 12px; font-family: 'Meiryo UI'; "
-                f"text-align: center; padding: 4px; }}"
-                f"QPushButton:hover {{ background: {fg}22; border-color: {fg}; }}"
-                f"QPushButton:pressed {{ background: {fg}33; }}"
-            )
-            card.clicked.connect(lambda _, m=mode: self._open_new(mode=m))
+        for icon, label, mode in _CARDS:
+            card = _ModeCard(icon, label, mode, self)
+            card.clicked.connect(self._open_new)
             cards_row.addWidget(card)
 
         cards_row.addStretch()
@@ -109,9 +163,9 @@ class LabelListWidget(QWidget):
         self._search_edit.setPlaceholderText("🔍  ラベル名で検索...")
         self._search_edit.setFixedHeight(32)
         self._search_edit.setStyleSheet(
-            "QLineEdit { border: 1px solid #CBD5E1; border-radius: 4px; "
-            "padding: 0 10px; font-size: 13px; background: white; }"
-            "QLineEdit:focus { border-color: #1565C0; }"
+            f"QLineEdit {{ border: 1px solid {C_BORDER_DARK}; border-radius: 5px; "
+            f"padding: 0 10px; font-size: 13px; background: white; }}"
+            f"QLineEdit:focus {{ border-color: {C_PRIMARY}; }}"
         )
         self._search_edit.setClearButtonEnabled(True)
         self._search_edit.textChanged.connect(self._apply_filter)
@@ -120,10 +174,10 @@ class LabelListWidget(QWidget):
         self._mode_filter.setFixedHeight(32)
         self._mode_filter.setFixedWidth(160)
         self._mode_filter.setStyleSheet(
-            "QComboBox { border: 1px solid #CBD5E1; border-radius: 4px; "
-            "padding: 0 8px; font-size: 13px; background: white; }"
-            "QComboBox:focus { border-color: #1565C0; }"
-            "QComboBox::drop-down { border: none; width: 24px; }"
+            f"QComboBox {{ border: 1px solid {C_BORDER_DARK}; border-radius: 5px; "
+            f"padding: 0 8px; font-size: 13px; background: white; }}"
+            f"QComboBox:focus {{ border-color: {C_PRIMARY}; }}"
+            f"QComboBox::drop-down {{ border: none; width: 24px; }}"
         )
         self._mode_filter.addItem("モード: すべて", "")
         for key, label in MODE_LABEL.items():
@@ -224,9 +278,9 @@ class LabelListWidget(QWidget):
         self._empty_btn.setFixedHeight(36)
         self._empty_btn.setFixedWidth(160)
         self._empty_btn.setStyleSheet(
-            "QPushButton { background: #1565C0; color: white; border-radius: 4px; "
-            "border: none; font-size: 13px; padding: 0 16px; }"
-            "QPushButton:hover { background: #1976D2; }"
+            f"QPushButton {{ background: {C_PRIMARY}; color: white; border-radius: 5px; "
+            f"border: none; font-size: 13px; padding: 0 16px; }}"
+            f"QPushButton:hover {{ background: {C_PRIMARY_HOVER}; }}"
         )
 
         v.addWidget(icon_lbl)
@@ -382,11 +436,11 @@ class LabelListWidget(QWidget):
             pdf_exists = bool(b.pdf_path and os.path.isfile(b.pdf_path))
             btn_pdf.setEnabled(pdf_exists)
             btn_pdf.setStyleSheet(
-                f"QPushButton {{ background: {'#E8F5E9' if pdf_exists else '#F5F5F5'}; "
-                f"color: {'#2E7D32' if pdf_exists else '#BDBDBD'}; "
-                f"border: 1px solid {'#A5D6A7' if pdf_exists else '#E0E0E0'}; "
-                f"border-radius: 4px; font-size: 12px; padding: 0 8px; }}"
-                f"QPushButton:hover:enabled {{ background: #C8E6C9; }}"
+                f"QPushButton {{ background: {C_PRIMARY_LIGHT if pdf_exists else C_BG}; "
+                f"color: {C_PRIMARY if pdf_exists else C_TEXT_MUTED}; "
+                f"border: 1px solid {C_PRIMARY_BORDER if pdf_exists else C_BORDER}; "
+                f"border-radius: 5px; font-size: 12px; padding: 0 8px; }}"
+                f"QPushButton:hover:enabled {{ background: #DBEAFE; }}"
             )
             btn_pdf.setToolTip(b.pdf_path if pdf_exists else "PDFがまだ出力されていません")
             btn_pdf.clicked.connect(lambda _, p=b.pdf_path: self._open_pdf(p))
