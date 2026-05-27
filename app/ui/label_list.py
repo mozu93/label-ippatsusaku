@@ -60,32 +60,46 @@ class LabelListWidget(QWidget):
 
         # ── ヘッダー行 ────────────────────────────────────────────────
         toolbar = QHBoxLayout()
-        title_lbl = QLabel("宛名ラベル")
+        title_lbl = QLabel("ラベル一発作成")
         title_lbl.setFont(font_page_title())
         title_lbl.setStyleSheet(PAGE_TITLE_STYLE)
-
-        btn_direct = QPushButton("＋ 新規作成")
-        btn_direct.setFixedHeight(BTN_H)
-        btn_direct.setStyleSheet(BTN_PRIMARY)
-        btn_direct.setToolTip(
-            "取引先マスタを使わず、貼り付けたデータ（企業名・住所・肩書・氏名）を\n"
-            "そのままラベルに出力します。"
-        )
-        btn_direct.clicked.connect(self._open_new)
-
         toolbar.addWidget(title_lbl)
         toolbar.addStretch()
-        toolbar.addWidget(btn_direct)
         layout.addLayout(toolbar)
 
-        # ── 説明テキスト ────────────────────────────────────────────
-        desc = QLabel(
-            "事業所名、所属・役職名、氏名、郵便番号、住所を貼り付けるか、"
-            "CSVを読み込むと様々なラベルを作成できます。"
-        )
-        desc.setStyleSheet(f"color: {C_TEXT_SUB}; font-size: 12px;")
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
+        # ── 何を作りますか？カード ────────────────────────────────────
+        start_lbl = QLabel("何を作りますか？")
+        start_lbl.setStyleSheet("font-size: 13px; font-weight: bold; color: #334155;")
+        layout.addWidget(start_lbl)
+
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(8)
+
+        _CARDS = [
+            ("📬", "宛名ラベル\n（氏名あり）",   "normal",    "#EFF6FF", "#1565C0"),
+            ("📮", "宛名ラベル\n（氏名なし）",   "no_person", "#EFF6FF", "#1565C0"),
+            ("🏢", "事業所名のみ",               "simple",    "#F0FDF4", "#2E7D32"),
+            ("🪪", "名札",                       "nametag",   "#FFF7ED", "#C2410C"),
+            ("🪧", "卓上プレート",               "split4",    "#FAF5FF", "#6D28D9"),
+        ]
+
+        for icon, label, mode, bg, fg in _CARDS:
+            card = QPushButton(f"{icon}\n{label}")
+            card.setFixedHeight(72)
+            card.setFixedWidth(130)
+            card.setStyleSheet(
+                f"QPushButton {{ background: {bg}; color: {fg}; "
+                f"border: 1px solid {fg}44; border-radius: 8px; "
+                f"font-size: 12px; font-family: 'Meiryo UI'; "
+                f"text-align: center; padding: 4px; }}"
+                f"QPushButton:hover {{ background: {fg}22; border-color: {fg}; }}"
+                f"QPushButton:pressed {{ background: {fg}33; }}"
+            )
+            card.clicked.connect(lambda _, m=mode: self._open_new(mode=m))
+            cards_row.addWidget(card)
+
+        cards_row.addStretch()
+        layout.addLayout(cards_row)
 
         # ── 検索・フィルターバー ─────────────────────────────────────
         filter_bar = QHBoxLayout()
@@ -471,9 +485,9 @@ class LabelListWidget(QWidget):
         if batch_id is not None:
             self._open_batch(batch_id)
 
-    def _open_new(self):
+    def _open_new(self, mode: str = "normal"):
         from app.ui.direct_label_dialog import DirectLabelDialog
-        dlg = DirectLabelDialog(parent=self)
+        dlg = DirectLabelDialog(parent=self, initial_mode=mode)
         dlg.exec()
         self._load()
 

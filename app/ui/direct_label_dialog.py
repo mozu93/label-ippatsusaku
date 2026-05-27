@@ -300,7 +300,7 @@ class DirectLabelDialog(QDialog):
         ("住所表示番号",  130, QHeaderView.ResizeMode.Fixed),
     ]
 
-    def __init__(self, batch_id: int | None = None, parent=None):
+    def __init__(self, batch_id: int | None = None, parent=None, initial_mode: str = "normal"):
         super().__init__(parent)
         self._batch_id = batch_id
         self._last_chk_row: int | None = None
@@ -314,6 +314,8 @@ class DirectLabelDialog(QDialog):
         self._init_ui()
         if batch_id is not None:
             self._load_batch(batch_id)
+        elif initial_mode != "normal":
+            self._set_initial_mode(initial_mode)
 
     def _init_ui(self):
         root = QVBoxLayout(self)
@@ -331,6 +333,10 @@ class DirectLabelDialog(QDialog):
             "border-radius: 4px; padding: 8px 12px; font-size: 12px; color: #166534;"
         )
         root.addWidget(banner)
+
+        # ── ステップインジケーター ────────────────────────────────────
+        self._step_bar = self._build_step_bar()
+        root.addWidget(self._step_bar)
 
         name_row = QHBoxLayout()
         name_row.setSpacing(8)
@@ -689,6 +695,12 @@ class DirectLabelDialog(QDialog):
         )
         btn_cancel.clicked.connect(self.reject)
 
+        self._btn_preview = QPushButton("👁 プレビュー")
+        self._btn_preview.setFixedHeight(36)
+        self._btn_preview.setStyleSheet(BTN_OUTLINE)
+        self._btn_preview.setToolTip("PDF を保存せずにプレビュー表示します")
+        self._btn_preview.clicked.connect(self._preview_pdf)
+
         self._btn_export = QPushButton("PDF を出力する")
         self._btn_export.setFixedHeight(36)
         self._btn_export.setStyleSheet(BTN_PRIMARY)
@@ -708,8 +720,60 @@ class DirectLabelDialog(QDialog):
         foot.addWidget(self._font_combo)
         foot.addSpacing(8)
         foot.addWidget(btn_cancel)
+        foot.addSpacing(4)
+        foot.addWidget(self._btn_preview)
         foot.addWidget(self._btn_export)
         root.addLayout(foot)
+
+    # ── ステップインジケーター ───────────────────────────────────────
+
+    def _build_step_bar(self) -> QWidget:
+        """① モード → ② 取込 → ③ プレビュー → ④ 出力 のステップバーを構築する"""
+        bar = QWidget()
+        bar.setFixedHeight(36)
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._step_labels: list[QLabel] = []
+        steps = ["① モード選択", "② データ取込", "③ プレビュー", "④ PDF出力"]
+
+        for i, text in enumerate(steps):
+            lbl = QLabel(text)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setFixedHeight(28)
+            self._step_labels.append(lbl)
+            layout.addWidget(lbl)
+
+            if i < len(steps) - 1:
+                arrow = QLabel("›")
+                arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                arrow.setFixedWidth(16)
+                arrow.setStyleSheet("color: #CBD5E1; font-size: 16px;")
+                layout.addWidget(arrow)
+
+        layout.addStretch()
+        self._update_step(1)
+        return bar
+
+    def _update_step(self, active: int):
+        """active: 現在のステップ番号（1〜4）。それ以前は完了、それ以降は未着手スタイル"""
+        styles = {
+            "done":    ("background:#DCFCE7; color:#166534; border-radius:4px;"
+                        "font-size:12px; font-family:'Meiryo UI'; padding:0 10px;"),
+            "active":  ("background:#1565C0; color:white; border-radius:4px;"
+                        "font-size:12px; font-weight:bold; font-family:'Meiryo UI'; padding:0 10px;"),
+            "pending": ("background:#F1F5F9; color:#94A3B8; border-radius:4px;"
+                        "font-size:12px; font-family:'Meiryo UI'; padding:0 10px;"),
+        }
+        for i, lbl in enumerate(self._step_labels):
+            step = i + 1
+            if step < active:
+                lbl.setStyleSheet(styles["done"])
+            elif step == active:
+                lbl.setStyleSheet(styles["active"])
+            else:
+                lbl.setStyleSheet(styles["pending"])
 
     def _refresh_save_path_label(self):
         """保存先ラベルを現在の設定値で更新する"""
@@ -1254,6 +1318,82 @@ class DirectLabelDialog(QDialog):
             self._count_lbl.setText(f"{total} 件")
         else:
             self._count_lbl.setText(f"{total} 件（{checked} 件を出力対象）")
+        # ステップ更新: データが入れば②完了→③プレビューへ
+        self._update_step(3 if total > 0 else 2)
+
+    def _set_initial_mode(self, mode: str):
+        """カードから開いたときの初期モードを設定する"""
+        btn_map = {
+            "normal":    self._radio_normal,
+            "no_person": self._radio_no_person,
+            "simple":    self._radio_simple,
+            "nametag":   self._radio_nametag,
+            "split4":    self._radio_split4,
+        }
+        btn = btn_map.get(mode)
+        if btn:
+            btn.setChecked(True)
+
+    def _preview_pdf(self):
+        """データを PDF 化してプレビュー表示する（ファイル保存なし）"""
+        from io import BytesIO
+        try:
+            import fitz  # noqa: F401  PyMuPDF 確認用
+        except ImportError:
+            QMessageBox.critical(
+                self, "ライブラリ不足",
+                "PyMuPDF がインストールされていません。\n"
+                "pip install PyMuPDF を実行してください。"
+            )
+            return
+
+        if self.table.rowCount() == 0:
+            QMessageBox.warning(self, "データなし", "プレビューするデータがありません。")
+            return
+
+        checked_rows = self._get_checked_rows()
+        if not checked_rows:
+            QMessageBox.warning(
+                self, "出力対象なし",
+                "チェックされたデータがありません。\n"
+                "プレビューしたい行にチェックを入れてください。"
+            )
+            return
+
+        mode       = self._current_mode()
+        layout_key = self._layout_combo.currentData() or DEFAULT_LAYOUT_KEY
+        font_key   = self._font_combo.currentData()   or DEFAULT_FONT_KEY
+
+        # テーブルの選択行を LabelEntry 互換の軽量オブジェクトに変換
+        entries = []
+        for row in checked_rows:
+            def _cell(col, _row=row):
+                item = self.table.item(_row, col)
+                return item.text().strip() if item else ""
+            entries.append(type("_E", (), {
+                "company_name":    _cell(self.COL_COMPANY),
+                "company_kana":    _cell(self.COL_KANA),
+                "title":           _cell(self.COL_TITLE),
+                "person_name":     _cell(self.COL_PERSON),
+                "postal_code":     _cell(self.COL_POSTAL),
+                "address1":        _cell(self.COL_ADDR),
+                "address2":        "",
+                "barcode_address": _cell(self.COL_BC_ADDR),
+                "entry_mode":      "inherit",
+            })())
+
+        buf = BytesIO()
+        try:
+            generate_label_pdf(entries, buf, mode, layout_key, font_key,
+                               barcode_enabled=self._chk_barcode.isChecked())
+        except Exception as ex:
+            QMessageBox.critical(self, "プレビューエラー",
+                                 f"PDF の生成に失敗しました：\n{ex}")
+            return
+
+        from app.ui.pdf_preview_dialog import PdfPreviewDialog
+        dlg = PdfPreviewDialog(buf.getvalue(), "PDF プレビュー", parent=self)
+        dlg.exec()
 
     def _fill_rows(self, direct_rows):
         if not direct_rows:

@@ -189,9 +189,10 @@ def generate_label_pdf(
     lw, lh = _label_wh(layout)
     per_page = layout.cols * layout.rows
 
-    parent = os.path.dirname(output_path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
+    if isinstance(output_path, str):
+        parent = os.path.dirname(output_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
 
     page_w = A4[0]   # 幅は常に A4 幅（210mm）
     page_h = layout.page_h_mm * mm
