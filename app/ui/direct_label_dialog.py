@@ -323,14 +323,13 @@ class DirectLabelDialog(QDialog):
         root.setSpacing(10)
 
         banner = QLabel(
-            "宛名ラベル、事業所名ラベル、名札、事業所名プレートを作成します。<br>"
-            "手順：①データ名を入力　②モードを選択　"
-            "③必要なデータをクリップボードにコピーして取り込むか、CSVから読み込む。"
+            "データ名を入力し、モードを選択してデータを取り込んでください。"
+            "Excel からコピー（Ctrl+V）または CSV ファイルで取込できます。"
         )
         banner.setWordWrap(True)
         banner.setStyleSheet(
             "background: #F0FDF4; border: 1px solid #86EFAC; "
-            "border-radius: 4px; padding: 8px 12px; font-size: 12px; color: #166534;"
+            "border-radius: 4px; padding: 6px 12px; font-size: 12px; color: #166534;"
         )
         root.addWidget(banner)
 
@@ -565,6 +564,7 @@ class DirectLabelDialog(QDialog):
         self._btn_undo.clicked.connect(self._undo)
         QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._undo)
         QShortcut(QKeySequence("Ctrl+V"), self).activated.connect(self._do_paste)
+        QShortcut(QKeySequence("Ctrl+P"), self).activated.connect(self._preview_pdf)
 
         toolbar.addWidget(btn_paste)
         toolbar.addWidget(btn_csv)
@@ -698,7 +698,7 @@ class DirectLabelDialog(QDialog):
         self._btn_preview = QPushButton("👁 プレビュー")
         self._btn_preview.setFixedHeight(36)
         self._btn_preview.setStyleSheet(BTN_OUTLINE)
-        self._btn_preview.setToolTip("PDF を保存せずにプレビュー表示します")
+        self._btn_preview.setToolTip("PDF を保存せずにプレビュー表示します（Ctrl+P）")
         self._btn_preview.clicked.connect(self._preview_pdf)
 
         self._btn_export = QPushButton("PDF を出力する")
@@ -753,7 +753,7 @@ class DirectLabelDialog(QDialog):
                 layout.addWidget(arrow)
 
         layout.addStretch()
-        self._update_step(1)
+        self._update_step(2)  # モードは常に初期選択済みなので②から開始
         return bar
 
     def _update_step(self, active: int):
@@ -1601,6 +1601,7 @@ class DirectLabelDialog(QDialog):
 
         set_direct_label_save_path(dest_dir)
         self._refresh_save_path_label()
+        self._update_step(4)   # PDF出力完了 → ④
 
         _s = get_session()
         try:
