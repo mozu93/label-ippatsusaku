@@ -180,6 +180,61 @@ def status_badge(color: str, bg: str) -> str:
         f"font-family: '{FONT_FAMILY}';"
     )
 
+# ── Toolbar button styles (small padding) ────────────────────────────
+BTN_TB_OUTLINE = (
+    f"QPushButton {{ background: white; color: {C_PRIMARY}; "
+    f"border: 1px solid {C_PRIMARY}; border-radius: 5px; "
+    f"font-size: 12px; font-family: '{FONT_FAMILY}'; padding: 0 10px; }}"
+    f"QPushButton:hover {{ background: {C_PRIMARY_LIGHT}; }}"
+    f"QPushButton:disabled {{ color: {C_TEXT_MUTED}; border-color: {C_BORDER_DARK}; }}"
+)
+
+BTN_TB_DANGER = (
+    f"QPushButton {{ background: {C_DANGER}; color: white; border-radius: 5px; "
+    f"border: none; font-size: 12px; font-family: '{FONT_FAMILY}'; padding: 0 10px; }}"
+    f"QPushButton:hover {{ background: {C_DANGER_HOVER}; }}"
+)
+
+# ── Segment button style ──────────────────────────────────────────────
+def seg_btn_style(pos: str) -> str:
+    """pos: 'left' | 'mid' | 'right'"""
+    r_tl = "4px" if pos == "left"  else "0px"
+    r_tr = "4px" if pos == "right" else "0px"
+    r_bl = "4px" if pos == "left"  else "0px"
+    r_br = "4px" if pos == "right" else "0px"
+    border_right = "none" if pos != "right" else "1px solid #CBD5E1"
+    return (
+        f"QPushButton {{"
+        f"  background: white; color: {C_PRIMARY};"
+        f"  border-top: 1px solid #CBD5E1;"
+        f"  border-bottom: 1px solid #CBD5E1;"
+        f"  border-left: 1px solid #CBD5E1;"
+        f"  border-right: {border_right};"
+        f"  border-top-left-radius: {r_tl}; border-bottom-left-radius: {r_bl};"
+        f"  border-top-right-radius: {r_tr}; border-bottom-right-radius: {r_br};"
+        f"  font-size: 12px; font-family: '{FONT_FAMILY}'; padding: 0 12px; }}"
+        f"QPushButton:checked {{"
+        f"  background: {C_PRIMARY}; color: white;"
+        f"  border-color: {C_PRIMARY}; }}"
+        f"QPushButton:hover:!checked {{ background: {C_PRIMARY_LIGHT}; }}"
+    )
+
+# ── Step indicator styles ─────────────────────────────────────────────
+STEP_STYLES: dict[str, str] = {
+    "done": (
+        f"background: {C_SUCCESS_BG}; color: #166534; border-radius: 5px;"
+        f"font-size: 12px; font-family: '{FONT_FAMILY}'; padding: 0 10px;"
+    ),
+    "active": (
+        f"background: {C_PRIMARY}; color: white; border-radius: 5px;"
+        f"font-size: 12px; font-weight: bold; font-family: '{FONT_FAMILY}'; padding: 0 10px;"
+    ),
+    "pending": (
+        f"background: {C_BG_ALT}; color: {C_TEXT_MUTED}; border-radius: 5px;"
+        f"font-size: 12px; font-family: '{FONT_FAMILY}'; padding: 0 10px;"
+    ),
+}
+
 # ── Radio button (legacy) ─────────────────────────────────────────────
 MODE_RADIO_STYLE = (
     f"QRadioButton {{"

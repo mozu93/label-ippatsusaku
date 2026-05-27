@@ -6,256 +6,38 @@
 import os
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QLabel, QButtonGroup, QRadioButton,
-    QTableWidget, QTableWidgetItem, QHeaderView,
+    QDialog, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QButtonGroup,
+    QTableWidgetItem, QHeaderView,
     QMessageBox, QFileDialog,
     QComboBox, QLineEdit,
-    QDialogButtonBox, QPlainTextEdit, QStyledItemDelegate,
-    QAbstractItemDelegate, QApplication,
+    QApplication,
     QCheckBox, QWidget, QFrame, QMenu,
 )
-from PyQt6.QtCore import Qt, QEvent, QPoint, pyqtSignal
-from PyQt6.QtGui import QFont, QBrush, QColor, QKeySequence, QShortcut, QAction
+from PyQt6.QtCore import Qt, QEvent, QPoint
+from PyQt6.QtGui import QBrush, QColor, QKeySequence, QShortcut, QAction
 
 from app.database.models import get_session, LabelBatch, LabelEntry
-from app.utils.label_import import (
-    parse_raw_csv_bytes, parse_raw_clipboard,
-    DirectRow,
-    _normalize, _DIR_COMPANY, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_TITLE, _DIR_PERSON,
-    _FALLBACK_COLS,
-)
+from app.utils.label_import import parse_raw_csv_bytes, parse_raw_clipboard, DirectRow
 from app.services.label_pdf_service import (
     generate_label_pdf, LABEL_LAYOUTS, DEFAULT_LAYOUT_KEY,
     FONT_OPTIONS, DEFAULT_FONT_KEY,
 )
-from app.ui.theme import BTN_PRIMARY, BTN_DANGER, BTN_OUTLINE, MODE_RADIO_STYLE
-from app.ui.widgets import CheckableHeader
+from app.ui.theme import (
+    BTN_PRIMARY, BTN_OUTLINE,
+    BTN_TB_OUTLINE, BTN_TB_DANGER,
+    seg_btn_style, STEP_STYLES,
+    INFO_BANNER,
+    C_PRIMARY, C_TEXT_MUTED,
+    FONT_FAMILY,
+)
+from app.ui.widgets import CheckableHeader, DraggableTable, MultilineDelegate
+from app.ui.column_mapping_dialog import ColumnMappingDialog
 from app.utils.app_config import (
     get_label_save_path,
     get_direct_label_save_path, set_direct_label_save_path,
 )
 
-
-class _DraggableTable(QTableWidget):
-    """行のドラッグ＆ドロップ並び替えに対応した QTableWidget サブクラス。
-    cell widget（チェックボックス）を含む行を正しく移動するため、
-    dropEvent でシグナルを発行してダイアログ側で再構築する。"""
-
-    rows_dropped = pyqtSignal(int, list)   # (挿入先行番号, 移動元行番号リスト)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.setDragEnabled(True)
-        self.setAcceptDrops(True)
-        # DragDrop モード: DropIndicator を表示しつつ Qt の自動移動は行わせない
-        self.setDragDropMode(QTableWidget.DragDropMode.DragDrop)
-        self.setDropIndicatorShown(True)
-        self.setDefaultDropAction(Qt.DropAction.CopyAction)
-
-    def dropEvent(self, event):
-        if event.source() is not self:
-            super().dropEvent(event)
-            return
-
-        target_row = self.indexAt(event.position().toPoint()).row()
-        if target_row < 0:
-            target_row = self.rowCount()
-
-        source_rows = sorted(set(idx.row() for idx in self.selectedIndexes()))
-
-        # IgnoreAction にすることで Qt がアイテムを自動削除するのを防ぐ
-        # 実際の並び替えは rows_dropped シグナルで受け取るダイアログ側が行う
-        event.setDropAction(Qt.DropAction.IgnoreAction)
-        event.accept()
-
-        if source_rows:
-            self.rows_dropped.emit(target_row, source_rows)
-
-
-class _MultilineDelegate(QStyledItemDelegate):
-    """Alt+Enter で改行を挿入できる企業名セル用デリゲート"""
-
-    def createEditor(self, parent, option, index):
-        editor = QPlainTextEdit(parent)
-        editor.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        editor.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        editor.setStyleSheet("background: white; border: 1px solid #2563EB;")
-        return editor
-
-    def setEditorData(self, editor, index):
-        editor.setPlainText(index.data(Qt.ItemDataRole.EditRole) or "")
-        editor.selectAll()
-
-    def setModelData(self, editor, model, index):
-        model.setData(index, editor.toPlainText(), Qt.ItemDataRole.EditRole)
-
-    def updateEditorGeometry(self, editor, option, index):
-        editor.setGeometry(option.rect)
-
-    def displayText(self, value, locale):
-        return (value or "").replace("\n", " ｜ ")
-
-    def eventFilter(self, obj, event):
-        if isinstance(obj, QPlainTextEdit) and event.type() == event.Type.KeyPress:
-            key  = event.key()
-            mods = event.modifiers()
-            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                if mods & Qt.KeyboardModifier.AltModifier:
-                    obj.insertPlainText("\n")
-                    return True
-                self.commitData.emit(obj)
-                self.closeEditor.emit(obj, QAbstractItemDelegate.EndEditHint.NoHint)
-                return True
-            if key == Qt.Key.Key_Tab:
-                self.commitData.emit(obj)
-                self.closeEditor.emit(obj, QAbstractItemDelegate.EndEditHint.NoHint)
-                return True
-        return super().eventFilter(obj, event)
-
-
-class ColumnMappingDialog(QDialog):
-    """貼り付けデータの列を各フィールドに対応付けるダイアログ"""
-
-    _FIELDS = [
-        ("company_name", "事業所名"),
-        ("company_kana", "フリガナ（読み）"),
-        ("title",        "所属・役職名"),
-        ("person_name",  "氏名"),
-        ("postal_code",  "郵便番号"),
-        ("address1",     "住所"),
-    ]
-
-    _REQUIRED_BY_MODE: dict[str, set] = {
-        "normal":    {"company_name", "address1", "person_name"},
-        "no_person": {"company_name", "address1"},
-        "simple":    {"company_name"},
-        "nametag":   {"company_name", "person_name"},
-        "split4":    {"company_name"},
-    }
-
-    _FIELD_HINTS: dict[str, str] = {
-        "company_kana": "任意・自動入力可",
-        "title":        "任意",
-        "postal_code":  "任意・自動入力可",
-    }
-
-    def __init__(self, headers: list, preview_rows: list, mode: str = "normal", parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("列の対応を設定")
-        self.setMinimumSize(720, 520)
-        self._headers = headers
-        self._preview_rows = preview_rows
-        self._required = self._REQUIRED_BY_MODE.get(mode, {"company_name"})
-        self._combos: dict = {}
-        self._init_ui()
-        self._auto_detect()
-
-    def _init_ui(self):
-        root = QVBoxLayout(self)
-        root.setSpacing(12)
-        root.setContentsMargins(20, 16, 20, 16)
-
-        lbl_pre = QLabel("貼り付けデータのプレビュー（先頭 5 行）")
-        lbl_pre.setStyleSheet("font-weight: bold;")
-        root.addWidget(lbl_pre)
-
-        self._preview_tbl = QTableWidget(len(self._preview_rows), len(self._headers))
-        self._preview_tbl.setHorizontalHeaderLabels(self._headers)
-        self._preview_tbl.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._preview_tbl.setMaximumHeight(170)
-        self._preview_tbl.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
-        for r, row in enumerate(self._preview_rows):
-            for c, val in enumerate(row):
-                self._preview_tbl.setItem(r, c, QTableWidgetItem(val))
-        root.addWidget(self._preview_tbl)
-
-        lbl_map = QLabel("各フィールドに対応する列を選択してください")
-        lbl_map.setStyleSheet("font-weight: bold; margin-top: 8px;")
-        root.addWidget(lbl_map)
-
-        form = QFormLayout()
-        form.setSpacing(8)
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        choices = ["（使用しない）"] + self._headers
-
-        for field_id, field_label in self._FIELDS:
-            combo = QComboBox()
-            combo.addItems(choices)
-            required = field_id in self._required
-            hint = self._FIELD_HINTS.get(field_id)
-            if required:
-                suffix = " <span style='color:red'>*</span>"
-            elif hint:
-                suffix = (f" <span style='color:#94A3B8; font-size:11px'>"
-                          f"（{hint}）</span>")
-            else:
-                suffix = ""
-            lbl = QLabel(f"{field_label}{suffix}")
-            lbl.setTextFormat(Qt.TextFormat.RichText)
-            form.addRow(lbl, combo)
-            self._combos[field_id] = combo
-
-        root.addLayout(form)
-        root.addStretch()
-
-        btns = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        btns.button(QDialogButtonBox.StandardButton.Ok).setText("取込む")
-        btns.button(QDialogButtonBox.StandardButton.Cancel).setText("キャンセル")
-        btns.accepted.connect(self._on_ok)
-        btns.rejected.connect(self.reject)
-        root.addWidget(btns)
-
-    def _auto_detect(self):
-        field_keys = {
-            "company_name": _DIR_COMPANY,
-            "company_kana": _DIR_KANA,
-            "postal_code":  _DIR_POSTAL,
-            "address1":     _DIR_ADDR1,
-            "title":        _DIR_TITLE,
-            "person_name":  _DIR_PERSON,
-        }
-        used: set = set()
-        matched = 0
-        for field_id, keys in field_keys.items():
-            norm_keys = {_normalize(k) for k in keys}
-            for i, h in enumerate(self._headers):
-                if _normalize(h) in norm_keys and i not in used:
-                    self._combos[field_id].setCurrentIndex(i + 1)
-                    used.add(i)
-                    matched += 1
-                    break
-
-        if matched == 0:
-            ncols = len(self._headers)
-            field_order = _FALLBACK_COLS.get(ncols) or _FALLBACK_COLS.get(
-                min(_FALLBACK_COLS.keys(), key=lambda k: abs(k - ncols))
-            )
-            if field_order:
-                for col_idx, field_id in enumerate(field_order):
-                    if col_idx < len(self._headers) and field_id in self._combos:
-                        self._combos[field_id].setCurrentIndex(col_idx + 1)
-
-    def _on_ok(self):
-        label_map = {fid: lbl for fid, lbl in self._FIELDS}
-        for field_id in self._required:
-            if self._combos[field_id].currentIndex() == 0:
-                QMessageBox.warning(
-                    self, "入力エラー",
-                    f"「{label_map.get(field_id, field_id)}」列を選択してください。"
-                )
-                return
-        self.accept()
-
-    def get_mapping(self) -> dict:
-        result = {}
-        for field_id, _ in self._FIELDS:
-            idx = self._combos[field_id].currentIndex()
-            result[field_id] = (idx - 1) if idx > 0 else None
-        return result
 
 
 class DirectLabelDialog(QDialog):
@@ -317,11 +99,26 @@ class DirectLabelDialog(QDialog):
         elif initial_mode != "normal":
             self._set_initial_mode(initial_mode)
 
-    def _init_ui(self):
+    def _init_ui(self) -> None:
+        """ルートレイアウトを構築し、各セクションをヘルパーメソッドで組み立てる"""
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 16, 20, 16)
         root.setSpacing(10)
 
+        root.addWidget(self._build_info_banner())
+        root.addWidget(self._build_step_bar())
+        root.addLayout(self._build_name_row())
+        root.addLayout(self._build_mode_row())
+        self._add_mode_banners(root)
+        root.addLayout(self._build_toolbar())
+        root.addWidget(self._build_table())
+        root.addLayout(self._build_save_row())
+        root.addLayout(self._build_footer())
+
+    # ── UI 構築ヘルパー ─────────────────────────────────────────────────
+
+    def _build_info_banner(self) -> QLabel:
+        """最上部のインフォバナーを生成する"""
         banner = QLabel(
             "データ名を入力し、モードを選択してデータを取り込んでください。"
             "Excel からコピー（Ctrl+V）または CSV ファイルで取込できます。"
@@ -331,65 +128,43 @@ class DirectLabelDialog(QDialog):
             "background: #F0FDF4; border: 1px solid #86EFAC; "
             "border-radius: 4px; padding: 6px 12px; font-size: 12px; color: #166534;"
         )
-        root.addWidget(banner)
+        return banner
 
-        # ── ステップインジケーター ────────────────────────────────────
-        self._step_bar = self._build_step_bar()
-        root.addWidget(self._step_bar)
+    def _build_name_row(self) -> QHBoxLayout:
+        """データ名入力行を生成する"""
+        row = QHBoxLayout()
+        row.setSpacing(8)
 
-        name_row = QHBoxLayout()
-        name_row.setSpacing(8)
         name_lbl = QLabel("データ名")
         name_lbl.setStyleSheet("font-weight: bold; font-size: 13px;")
         name_lbl.setFixedWidth(60)
+
         self._data_name_edit = QLineEdit()
         self._data_name_edit.setPlaceholderText("例）〇〇部会、〇〇視察研修会")
         self._data_name_edit.setFixedHeight(34)
         self._data_name_edit.setStyleSheet(
-            "QLineEdit { border: 1px solid #D1D5DB; border-radius: 5px; "
-            "padding: 0 8px; font-size: 13px; }"
-            "QLineEdit:focus { border-color: #2563EB; }"
+            f"QLineEdit {{ border: 1px solid #D1D5DB; border-radius: 5px; "
+            f"padding: 0 8px; font-size: 13px; font-family: '{FONT_FAMILY}'; }}"
+            f"QLineEdit:focus {{ border-color: {C_PRIMARY}; }}"
         )
-        name_row.addWidget(name_lbl)
-        name_row.addWidget(self._data_name_edit)
-        root.addLayout(name_row)
+        row.addWidget(name_lbl)
+        row.addWidget(self._data_name_edit)
+        return row
 
-        top_form = QHBoxLayout()
-        top_form.setSpacing(10)
+    def _build_mode_row(self) -> QHBoxLayout:
+        """モード選択セグメントボタン行を生成する"""
+        row = QHBoxLayout()
+        row.setSpacing(10)
+
         mode_lbl = QLabel("モード")
-        mode_lbl.setStyleSheet("font-size: 12px; color: #475569;")
+        mode_lbl.setStyleSheet(f"font-size: 12px; color: #475569;")
         mode_lbl.setFixedWidth(44)
 
-        # ── セグメントボタン（チェッカブル QPushButton） ──────────────
-        _C   = "#2563EB"   # primary color
-        _CH  = "#1D4ED8"   # hover
-        _SEG_H = 30        # ボタン高さ
-
         def _seg(label: str, pos: str) -> QPushButton:
-            """pos: 'left' | 'mid' | 'right'"""
             btn = QPushButton(label)
             btn.setCheckable(True)
-            btn.setFixedHeight(_SEG_H)
-            r_tl = "4px" if pos == "left"  else "0px"
-            r_tr = "4px" if pos == "right" else "0px"
-            r_bl = "4px" if pos == "left"  else "0px"
-            r_br = "4px" if pos == "right" else "0px"
-            br   = "none" if pos != "right" else f"1px solid #CBD5E1"
-            btn.setStyleSheet(
-                f"QPushButton {{"
-                f"  background: white; color: {_C};"
-                f"  border-top: 1px solid #CBD5E1;"
-                f"  border-bottom: 1px solid #CBD5E1;"
-                f"  border-left: 1px solid #CBD5E1;"
-                f"  border-right: {br};"
-                f"  border-top-left-radius: {r_tl}; border-bottom-left-radius: {r_bl};"
-                f"  border-top-right-radius: {r_tr}; border-bottom-right-radius: {r_br};"
-                f"  font-size: 12px; font-family: 'Meiryo UI'; padding: 0 12px; }}"
-                f"QPushButton:checked {{"
-                f"  background: {_C}; color: white;"
-                f"  border-color: {_C}; }}"
-                f"QPushButton:hover:!checked {{ background: #EFF6FF; }}"
-            )
+            btn.setFixedHeight(30)
+            btn.setStyleSheet(seg_btn_style(pos))
             return btn
 
         self._radio_normal    = _seg("宛名（氏名あり）",   "left")
@@ -401,106 +176,69 @@ class DirectLabelDialog(QDialog):
 
         grp = QButtonGroup(self)
         grp.setExclusive(True)
-        grp.addButton(self._radio_normal,    0)
-        grp.addButton(self._radio_no_person, 1)
-        grp.addButton(self._radio_simple,    2)
-        grp.addButton(self._radio_nametag,   3)
-        grp.addButton(self._radio_split4,    4)
+        for i, btn in enumerate([
+            self._radio_normal, self._radio_no_person,
+            self._radio_simple, self._radio_nametag, self._radio_split4,
+        ]):
+            grp.addButton(btn, i)
+            btn.toggled.connect(self._on_mode_toggled)
 
-        self._radio_normal.toggled.connect(self._on_mode_toggled)
-        self._radio_no_person.toggled.connect(self._on_mode_toggled)
-        self._radio_simple.toggled.connect(self._on_mode_toggled)
-        self._radio_nametag.toggled.connect(self._on_mode_toggled)
-        self._radio_split4.toggled.connect(self._on_mode_toggled)
-
-        # セグメント全体を包む横レイアウト（間隔ゼロで隣接）
         seg_wrap = QWidget()
         seg_layout = QHBoxLayout(seg_wrap)
         seg_layout.setContentsMargins(0, 0, 0, 0)
         seg_layout.setSpacing(0)
-        seg_layout.addWidget(self._radio_normal)
-        seg_layout.addWidget(self._radio_no_person)
-        seg_layout.addWidget(self._radio_simple)
-        seg_layout.addWidget(self._radio_nametag)
-        seg_layout.addWidget(self._radio_split4)
+        for btn in [
+            self._radio_normal, self._radio_no_person,
+            self._radio_simple, self._radio_nametag, self._radio_split4,
+        ]:
+            seg_layout.addWidget(btn)
 
-        top_form.addWidget(mode_lbl)
-        top_form.addWidget(seg_wrap)
-        top_form.addStretch()
-        root.addLayout(top_form)
+        row.addWidget(mode_lbl)
+        row.addWidget(seg_wrap)
+        row.addStretch()
+        return row
 
-        # 全モードバナーを単一の neutral-blue info スタイルで統一
-        _MODE_BANNER = (
-            "background: #EFF6FF; color: #1E40AF; border: 1px solid #BFDBFE; "
-            "border-radius: 6px; padding: 6px 12px; font-size: 11px; "
-            "font-family: 'Meiryo UI';"
-        )
+    def _add_mode_banners(self, root: QVBoxLayout) -> None:
+        """5モードの説明バナーをルートに追加する（各モード切替で表示/非表示）"""
+        def _banner(text: str, visible: bool) -> QLabel:
+            lbl = QLabel(text)
+            lbl.setWordWrap(True)
+            lbl.setStyleSheet(INFO_BANNER)
+            lbl.setVisible(visible)
+            root.addWidget(lbl)
+            return lbl
 
-        self._normal_banner = QLabel(
+        self._normal_banner = _banner(
             "事業所名、郵便番号、住所、所属・役職、氏名を Excel からコピーするか、"
             "CSV ファイルで取り込んでください。"
-            "郵便番号がわからない場合は住所から変換できます。（要インターネット接続）"
+            "郵便番号がわからない場合は住所から変換できます。（要インターネット接続）",
+            visible=True,
         )
-        self._normal_banner.setWordWrap(True)
-        self._normal_banner.setStyleSheet(_MODE_BANNER)
-        self._normal_banner.setVisible(True)
-        root.addWidget(self._normal_banner)
-
-        self._no_person_banner = QLabel(
+        self._no_person_banner = _banner(
             "事業所名・住所のみ出力します。氏名・所属・役職は印刷されません。"
-            "「御中」が自動的に付きます。"
+            "「御中」が自動的に付きます。",
+            visible=False,
         )
-        self._no_person_banner.setWordWrap(True)
-        self._no_person_banner.setStyleSheet(_MODE_BANNER)
-        self._no_person_banner.setVisible(False)
-        root.addWidget(self._no_person_banner)
-
-        self._simple_banner = QLabel(
-            "事業所名のみ出力されます。住所・肩書・氏名は印刷されません。"
+        self._simple_banner = _banner(
+            "事業所名のみ出力されます。住所・肩書・氏名は印刷されません。",
+            visible=False,
         )
-        self._simple_banner.setWordWrap(True)
-        self._simple_banner.setStyleSheet(_MODE_BANNER)
-        self._simple_banner.setVisible(False)
-        root.addWidget(self._simple_banner)
-
-        self._nametag_banner = QLabel(
-            "事業所名、所属・役職、氏名を名刺サイズで出力します。"
+        self._nametag_banner = _banner(
+            "事業所名、所属・役職、氏名を名刺サイズで出力します。",
+            visible=False,
         )
-        self._nametag_banner.setWordWrap(True)
-        self._nametag_banner.setStyleSheet(_MODE_BANNER)
-        self._nametag_banner.setVisible(False)
-        root.addWidget(self._nametag_banner)
-
-        self._split4_banner = QLabel(
+        self._split4_banner = _banner(
             "事業所名を A4 用紙横長４分割で均等割付して出力します。"
-            "上下回転させた事業所名を同時出力するので半分に折って使用します。"
+            "上下回転させた事業所名を同時出力するので半分に折って使用します。",
+            visible=False,
         )
-        self._split4_banner.setWordWrap(True)
-        self._split4_banner.setStyleSheet(_MODE_BANNER)
-        self._split4_banner.setVisible(False)
-        root.addWidget(self._split4_banner)
 
-        # ── ツールバー（1行・グループセパレーター区切り） ─────────────
+    def _build_toolbar(self) -> QHBoxLayout:
+        """ツールバーレイアウトを生成する（キーボードショートカット登録も含む）"""
         toolbar = QHBoxLayout()
         toolbar.setSpacing(4)
 
-        # ツールバー専用ボタンスタイル（パディング小さめ）
-        _C = "#2563EB"
-        _CL = "#EFF6FF"
-        _TB_OUTLINE = (
-            f"QPushButton {{ background: white; color: {_C}; "
-            f"border: 1px solid {_C}; border-radius: 5px; "
-            f"font-size: 12px; font-family: 'Meiryo UI'; padding: 0 10px; }}"
-            f"QPushButton:hover {{ background: {_CL}; }}"
-            f"QPushButton:disabled {{ color: #9CA3AF; border-color: #D1D5DB; }}"
-        )
-        _TB_DANGER = (
-            "QPushButton { background: #DC2626; color: white; border-radius: 5px; "
-            "border: none; font-size: 12px; font-family: 'Meiryo UI'; padding: 0 10px; }"
-            "QPushButton:hover { background: #B91C1C; }"
-        )
-
-        def _tb(label: str, style: str = _TB_OUTLINE) -> QPushButton:
+        def _tb(label: str, style: str = BTN_TB_OUTLINE) -> QPushButton:
             b = QPushButton(label)
             b.setFixedHeight(30)
             b.setStyleSheet(style)
@@ -527,13 +265,13 @@ class DirectLabelDialog(QDialog):
         btn_csv.clicked.connect(self._do_csv)
 
         # グループB：行編集
-        btn_add   = _tb("＋ 追加")
+        btn_add = _tb("＋ 追加")
         btn_add.clicked.connect(self._add_row)
 
-        btn_del   = _tb("行を削除", _TB_DANGER)
+        btn_del = _tb("行を削除", BTN_TB_DANGER)
         btn_del.clicked.connect(self._del_rows)
 
-        btn_clear = _tb("全クリア", _TB_DANGER)
+        btn_clear = _tb("全クリア", BTN_TB_DANGER)
         btn_clear.clicked.connect(self._clear_all)
 
         # グループC：自動補完
@@ -557,84 +295,80 @@ class DirectLabelDialog(QDialog):
         self._btn_undo.setToolTip("Ctrl+Z")
         self._btn_undo.setEnabled(False)
         self._btn_undo.clicked.connect(self._undo)
+
         QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._undo)
         QShortcut(QKeySequence("Ctrl+V"), self).activated.connect(self._do_paste)
         QShortcut(QKeySequence("Ctrl+P"), self).activated.connect(self._preview_pdf)
 
-        toolbar.addWidget(btn_paste)
-        toolbar.addWidget(btn_csv)
-        toolbar.addSpacing(4)
-        toolbar.addWidget(_sep())
-        toolbar.addSpacing(4)
-        toolbar.addWidget(btn_add)
-        toolbar.addWidget(btn_del)
-        toolbar.addWidget(btn_clear)
-        toolbar.addSpacing(4)
-        toolbar.addWidget(_sep())
-        toolbar.addSpacing(4)
-        toolbar.addWidget(btn_postal)
-        toolbar.addWidget(btn_kana)
-        toolbar.addSpacing(4)
-        toolbar.addWidget(_sep())
-        toolbar.addSpacing(4)
-        toolbar.addWidget(self._btn_undo)
+        for widget in [
+            btn_paste, btn_csv,
+            None,       # sep
+            btn_add, btn_del, btn_clear,
+            None,       # sep
+            btn_postal, btn_kana,
+            None,       # sep
+            self._btn_undo,
+        ]:
+            if widget is None:
+                toolbar.addSpacing(4)
+                toolbar.addWidget(_sep())
+                toolbar.addSpacing(4)
+            else:
+                toolbar.addWidget(widget)
         toolbar.addStretch()
-        root.addLayout(toolbar)
+        return toolbar
 
-        self.table = _DraggableTable(0, len(self._COLS))
+    def _build_table(self) -> QWidget:
+        """データテーブルを生成・設定して返す"""
+        self.table = DraggableTable(0, len(self._COLS))
         self._chk_header = CheckableHeader(self.table, initial_checked=True)
         self._chk_header.toggled.connect(self._on_header_toggled)
         self._chk_header.sort_requested.connect(self._on_sort)
         self.table.setHorizontalHeader(self._chk_header)
         self._chk_header.setStretchLastSection(False)
-        labels = [c[0] for c in self._COLS]
-        self.table.setHorizontalHeaderLabels(labels)
+
+        self.table.setHorizontalHeaderLabels([c[0] for c in self._COLS])
         hdr = self.table.horizontalHeader()
-        for i, (_, width, mode) in enumerate(self._COLS):
-            hdr.setSectionResizeMode(i, mode)
-            if mode == QHeaderView.ResizeMode.Fixed:
+        for i, (_, width, resize_mode) in enumerate(self._COLS):
+            hdr.setSectionResizeMode(i, resize_mode)
+            if resize_mode == QHeaderView.ResizeMode.Fixed:
                 self.table.setColumnWidth(i, width)
+
         self.table.setAlternatingRowColors(True)
         self.table.setStyleSheet(
-            "QTableWidget::item:selected {"
-            "  background-color: #BBDEFB; color: black;"
-            "}"
-            "QTableWidget::item:selected:active {"
-            "  background-color: #BBDEFB; color: black;"
-            "}"
-            "QTableWidget::item:hover {"
-            "  background-color: #BBDEFB; color: black;"
-            "}"
+            "QTableWidget::item:selected { background-color: #DBEAFE; color: black; }"
+            "QTableWidget::item:selected:active { background-color: #DBEAFE; color: black; }"
+            "QTableWidget::item:hover { background-color: #DBEAFE; color: black; }"
         )
         self.table.verticalHeader().setDefaultSectionSize(32)
         self.table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setItemDelegateForColumn(self.COL_COMPANY, _MultilineDelegate(self.table))
-        self.table.setItemDelegateForColumn(self.COL_TITLE,   _MultilineDelegate(self.table))
+        self.table.setSelectionBehavior(self.table.SelectionBehavior.SelectRows)
+        self.table.setItemDelegateForColumn(self.COL_COMPANY, MultilineDelegate(self.table))
+        self.table.setItemDelegateForColumn(self.COL_TITLE,   MultilineDelegate(self.table))
         self.table.installEventFilter(self)
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.rows_dropped.connect(self._on_rows_dropped)
-        root.addWidget(self.table)
-        self._chk_header.set_required_cols(
-            self._REQUIRED_COLS.get("normal", set())
-        )
-        self._update_column_visibility()  # 初期モードに合わせて列表示を設定
 
-        # ── 保存先表示行 ─────────────────────────────────────────────
-        save_row = QHBoxLayout()
-        save_row.setSpacing(6)
+        self._chk_header.set_required_cols(self._REQUIRED_COLS.get("normal", set()))
+        self._update_column_visibility()
+        return self.table
 
-        save_icon_lbl = QLabel("📁")
-        save_icon_lbl.setStyleSheet("font-size: 13px;")
+    def _build_save_row(self) -> QHBoxLayout:
+        """保存先表示行を生成する"""
+        row = QHBoxLayout()
+        row.setSpacing(6)
 
-        save_title_lbl = QLabel("保存先:")
-        save_title_lbl.setStyleSheet("font-size: 12px; color: #64748B;")
+        save_icon = QLabel("📁")
+        save_icon.setStyleSheet("font-size: 13px;")
+
+        save_title = QLabel("保存先:")
+        save_title.setStyleSheet("font-size: 12px; color: #64748B;")
 
         self._save_path_lbl = QLabel()
         self._save_path_lbl.setStyleSheet(
-            "font-size: 12px; color: #2563EB; "
+            f"font-size: 12px; color: {C_PRIMARY}; "
             "text-decoration: underline; cursor: pointer;"
         )
         self._save_path_lbl.setToolTip("クリックしてフォルダを変更")
@@ -642,44 +376,53 @@ class DirectLabelDialog(QDialog):
         self._save_path_lbl.mousePressEvent = lambda _: self._change_save_dir()
         self._refresh_save_path_label()
 
-        btn_change_dir = QPushButton("変更")
-        btn_change_dir.setFixedHeight(24)
-        btn_change_dir.setStyleSheet(
+        btn_change = QPushButton("変更")
+        btn_change.setFixedHeight(24)
+        btn_change.setStyleSheet(
             "QPushButton { font-size: 11px; color: #475569; background: white; "
             "border: 1px solid #CBD5E1; border-radius: 3px; padding: 0 8px; }"
             "QPushButton:hover { background: #F1F5F9; }"
         )
-        btn_change_dir.clicked.connect(self._change_save_dir)
+        btn_change.clicked.connect(self._change_save_dir)
 
-        save_row.addWidget(save_icon_lbl)
-        save_row.addWidget(save_title_lbl)
-        save_row.addWidget(self._save_path_lbl, 1)
-        save_row.addWidget(btn_change_dir)
-        root.addLayout(save_row)
+        row.addWidget(save_icon)
+        row.addWidget(save_title)
+        row.addWidget(self._save_path_lbl, 1)
+        row.addWidget(btn_change)
+        return row
 
+    def _build_footer(self) -> QHBoxLayout:
+        """フッター行（件数・用紙・フォント・ボタン群）を生成する"""
         foot = QHBoxLayout()
+
         self._count_lbl = QLabel("0 件")
         self._count_lbl.setStyleSheet("color: #64748B; font-size: 12px;")
 
-        layout_lbl = QLabel("用紙:")
-        layout_lbl.setStyleSheet("color: #475569; font-size: 12px;")
+        self._chk_barcode = QCheckBox("カスタマバーコードを印字する")
+        self._chk_barcode.setStyleSheet("font-size: 12px; color: #475569;")
+        self._chk_barcode.toggled.connect(self._on_barcode_toggled)
+        self._chk_barcode.setVisible(False)   # 機能一時無効化
+
+        def _lbl(text: str) -> QLabel:
+            l = QLabel(text)
+            l.setStyleSheet("color: #475569; font-size: 12px;")
+            return l
+
         self._layout_combo = QComboBox()
         self._layout_combo.setFixedHeight(34)
-        for key, layout_obj in LABEL_LAYOUTS.items():
-            self._layout_combo.addItem(layout_obj.name, key)
-        default_idx = self._layout_combo.findData(DEFAULT_LAYOUT_KEY)
-        if default_idx >= 0:
-            self._layout_combo.setCurrentIndex(default_idx)
+        for key, lo in LABEL_LAYOUTS.items():
+            self._layout_combo.addItem(lo.name, key)
+        idx = self._layout_combo.findData(DEFAULT_LAYOUT_KEY)
+        if idx >= 0:
+            self._layout_combo.setCurrentIndex(idx)
 
-        font_lbl = QLabel("フォント:")
-        font_lbl.setStyleSheet("color: #475569; font-size: 12px;")
         self._font_combo = QComboBox()
         self._font_combo.setFixedHeight(34)
         for key in FONT_OPTIONS:
             self._font_combo.addItem(key, key)
-        font_idx = self._font_combo.findData(DEFAULT_FONT_KEY)
-        if font_idx >= 0:
-            self._font_combo.setCurrentIndex(font_idx)
+        idx = self._font_combo.findData(DEFAULT_FONT_KEY)
+        if idx >= 0:
+            self._font_combo.setCurrentIndex(idx)
 
         btn_cancel = QPushButton("閉じる")
         btn_cancel.setFixedHeight(36)
@@ -702,23 +445,19 @@ class DirectLabelDialog(QDialog):
         self._btn_export.clicked.connect(self._export)
 
         foot.addWidget(self._count_lbl)
-        self._chk_barcode = QCheckBox("カスタマバーコードを印字する")
-        self._chk_barcode.setStyleSheet("font-size: 12px; color: #475569;")
-        self._chk_barcode.toggled.connect(self._on_barcode_toggled)
-        self._chk_barcode.setVisible(False)   # 機能一時無効化
         foot.addWidget(self._chk_barcode)
         foot.addStretch()
-        foot.addWidget(layout_lbl)
+        foot.addWidget(_lbl("用紙:"))
         foot.addWidget(self._layout_combo)
         foot.addSpacing(8)
-        foot.addWidget(font_lbl)
+        foot.addWidget(_lbl("フォント:"))
         foot.addWidget(self._font_combo)
         foot.addSpacing(8)
         foot.addWidget(btn_cancel)
         foot.addSpacing(4)
         foot.addWidget(self._btn_preview)
         foot.addWidget(self._btn_export)
-        root.addLayout(foot)
+        return foot
 
     # ── ステップインジケーター ───────────────────────────────────────
 
@@ -751,24 +490,12 @@ class DirectLabelDialog(QDialog):
         self._update_step(2)  # モードは常に初期選択済みなので②から開始
         return bar
 
-    def _update_step(self, active: int):
+    def _update_step(self, active: int) -> None:
         """active: 現在のステップ番号（1〜4）。それ以前は完了、それ以降は未着手スタイル"""
-        styles = {
-            "done":    ("background:#DCFCE7; color:#166534; border-radius:5px;"
-                        "font-size:12px; font-family:'Meiryo UI'; padding:0 10px;"),
-            "active":  ("background:#2563EB; color:white; border-radius:5px;"
-                        "font-size:12px; font-weight:bold; font-family:'Meiryo UI'; padding:0 10px;"),
-            "pending": ("background:#F3F4F6; color:#9CA3AF; border-radius:5px;"
-                        "font-size:12px; font-family:'Meiryo UI'; padding:0 10px;"),
-        }
         for i, lbl in enumerate(self._step_labels):
             step = i + 1
-            if step < active:
-                lbl.setStyleSheet(styles["done"])
-            elif step == active:
-                lbl.setStyleSheet(styles["active"])
-            else:
-                lbl.setStyleSheet(styles["pending"])
+            key = "done" if step < active else ("active" if step == active else "pending")
+            lbl.setStyleSheet(STEP_STYLES[key])
 
     def _refresh_save_path_label(self):
         """保存先ラベルを現在の設定値で更新する"""
@@ -835,7 +562,36 @@ class DirectLabelDialog(QDialog):
             item.setBackground(QColor('white'))
             item.setToolTip("")
 
-    def _on_sort(self, col: int):
+    # ── 行データ ヘルパー ───────────────────────────────────────────────
+
+    def _read_all_rows(self) -> list[tuple[list[str], bool]]:
+        """全行の (cell_values, is_checked) タプルリストを返す"""
+        result = []
+        for r in range(self.table.rowCount()):
+            chk = self._get_row_chk(r)
+            vals = [
+                (self.table.item(r, c) or QTableWidgetItem()).text()
+                for c in range(self.COL_COMPANY, len(self._COLS))
+            ]
+            result.append((vals, chk.isChecked() if chk else True))
+        return result
+
+    def _rebuild_table(self, rows: list[tuple[list[str], bool]]) -> None:
+        """(vals, is_checked) リストからテーブルを再構築する"""
+        self.table.setRowCount(0)
+        self._last_chk_row = None
+        for vals, checked in rows:
+            self._add_row(vals)
+            chk = self._get_row_chk(self.table.rowCount() - 1)
+            if chk:
+                chk.blockSignals(True)
+                chk.setChecked(checked)
+                chk.blockSignals(False)
+        self._update_count()
+
+    # ── ソート ──────────────────────────────────────────────────────────
+
+    def _on_sort(self, col: int) -> None:
         if col == self.COL_CHK:
             return
         if self._sort_col == col:
@@ -844,33 +600,15 @@ class DirectLabelDialog(QDialog):
             self._sort_col = col
             self._sort_asc = True
 
-        rows_data = []
-        for r in range(self.table.rowCount()):
-            chk = self._get_row_chk(r)
-            vals = [
-                (self.table.item(r, c) or QTableWidgetItem()).text()
-                for c in range(self.COL_COMPANY, len(self._COLS))
-            ]
-            rows_data.append((chk.isChecked() if chk else True, vals))
-
+        rows_data = [(vals, checked) for vals, checked in self._read_all_rows()]
         col_offset = col - self.COL_COMPANY
         rows_data.sort(
-            key=lambda x: x[1][col_offset].lower(),
+            key=lambda x: x[0][col_offset].lower(),
             reverse=not self._sort_asc,
         )
-
-        self.table.setRowCount(0)
-        self._last_chk_row = None
-        for checked, vals in rows_data:
-            self._add_row(vals)
-            chk = self._get_row_chk(self.table.rowCount() - 1)
-            if chk:
-                chk.blockSignals(True)
-                chk.setChecked(checked)
-                chk.blockSignals(False)
-
+        # _rebuild_table は (vals, checked) 順を期待する
+        self._rebuild_table(rows_data)
         self._update_sort_headers()
-        self._update_count()
 
     def _update_sort_headers(self):
         for col, (base, _, _) in enumerate(self._COLS):
@@ -1043,32 +781,16 @@ class DirectLabelDialog(QDialog):
                 return True
         return super().eventFilter(obj, event)
 
-    def _save_undo_snapshot(self):
-        snapshot = []
-        for r in range(self.table.rowCount()):
-            chk = self._get_row_chk(r)
-            vals = [(self.table.item(r, c) or QTableWidgetItem()).text()
-                    for c in range(self.COL_COMPANY, len(self._COLS))]
-            snapshot.append((vals, chk.isChecked() if chk else True))
-        self._undo_stack.append(snapshot)
+    def _save_undo_snapshot(self) -> None:
+        self._undo_stack.append(self._read_all_rows())
         if len(self._undo_stack) > 10:
             self._undo_stack.pop(0)
         self._btn_undo.setEnabled(True)
 
-    def _undo(self):
+    def _undo(self) -> None:
         if not self._undo_stack:
             return
-        snapshot = self._undo_stack.pop()
-        self.table.setRowCount(0)
-        self._last_chk_row = None
-        for vals, checked in snapshot:
-            self._add_row(vals)
-            chk = self._get_row_chk(self.table.rowCount() - 1)
-            if chk:
-                chk.blockSignals(True)
-                chk.setChecked(checked)
-                chk.blockSignals(False)
-        self._update_count()
+        self._rebuild_table(self._undo_stack.pop())
         self._btn_undo.setEnabled(bool(self._undo_stack))
 
     def _clear_all(self):
@@ -1224,20 +946,13 @@ class DirectLabelDialog(QDialog):
 
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
-    def _on_rows_dropped(self, target_row: int, source_rows: list):
+    def _on_rows_dropped(self, target_row: int, source_rows: list) -> None:
         """ドラッグ＆ドロップで行を並び替える"""
         if not source_rows:
             return
 
         self._save_undo_snapshot()
-
-        # 全行のデータを読み取る（drop前の状態）
-        all_rows = []
-        for r in range(self.table.rowCount()):
-            chk = self._get_row_chk(r)
-            vals = [(self.table.item(r, c) or QTableWidgetItem()).text()
-                    for c in range(self.COL_COMPANY, len(self._COLS))]
-            all_rows.append((vals, chk.isChecked() if chk else True))
+        all_rows = self._read_all_rows()
 
         # 移動元を取り出して挿入先に差し込む
         source_set = set(source_rows)
@@ -1247,27 +962,16 @@ class DirectLabelDialog(QDialog):
         # 挿入位置：source_rows のうちターゲットより前にある行の数だけ補正
         adj_target = target_row - sum(1 for r in source_rows if r < target_row)
         adj_target = max(0, min(adj_target, len(rest)))
-
         new_order = rest[:adj_target] + moving + rest[adj_target:]
 
-        # 順序が変わっていなければ何もしない（Undoスタックも戻す）
+        # 順序が変わっていなければ Undo スタックを戻して終了
         if new_order == all_rows:
             if self._undo_stack:
                 self._undo_stack.pop()
             self._btn_undo.setEnabled(bool(self._undo_stack))
             return
 
-        # テーブルを再構築
-        self.table.setRowCount(0)
-        self._last_chk_row = None
-        for vals, checked in new_order:
-            self._add_row(vals)
-            chk = self._get_row_chk(self.table.rowCount() - 1)
-            if chk:
-                chk.blockSignals(True)
-                chk.setChecked(checked)
-                chk.blockSignals(False)
-        self._update_count()
+        self._rebuild_table(new_order)
 
     def _duplicate_rows(self):
         """選択行を直下に複製する"""
