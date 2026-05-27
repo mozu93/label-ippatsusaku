@@ -444,72 +444,71 @@ class DirectLabelDialog(QDialog):
         self._split4_banner.setVisible(False)
         root.addWidget(self._split4_banner)
 
-        # ── 1行目：取込・編集 ──────────────────────────────────────────
-        ops1 = QHBoxLayout()
-        ops1.setSpacing(6)
+        # ── ツールバー（1行・グループセパレーター区切り） ─────────────
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(4)
 
-        btn_paste = QPushButton("貼り付けから取込")
-        btn_paste.setFixedHeight(32)
-        btn_paste.setStyleSheet(BTN_OUTLINE)
+        # ツールバー専用ボタンスタイル（パディング小さめ）
+        _C = "#1565C0"
+        _CL = "#EFF6FF"
+        _TB_OUTLINE = (
+            f"QPushButton {{ background: white; color: {_C}; "
+            f"border: 1px solid {_C}; border-radius: 4px; "
+            f"font-size: 12px; font-family: 'Meiryo UI'; padding: 0 10px; }}"
+            f"QPushButton:hover {{ background: {_CL}; }}"
+            f"QPushButton:disabled {{ color: #BDBDBD; border-color: #BDBDBD; }}"
+        )
+        _TB_DANGER = (
+            "QPushButton { background: #D32F2F; color: white; border-radius: 4px; "
+            "border: none; font-size: 12px; font-family: 'Meiryo UI'; padding: 0 10px; }"
+            "QPushButton:hover { background: #C62828; }"
+        )
+
+        def _tb(label: str, style: str = _TB_OUTLINE) -> QPushButton:
+            b = QPushButton(label)
+            b.setFixedHeight(30)
+            b.setStyleSheet(style)
+            return b
+
+        def _sep() -> QFrame:
+            f = QFrame()
+            f.setFrameShape(QFrame.Shape.VLine)
+            f.setFixedWidth(1)
+            f.setFixedHeight(20)
+            f.setStyleSheet("color: #CBD5E1;")
+            return f
+
+        # グループA：取込
+        btn_paste = _tb("貼り付けから取込")
         btn_paste.setToolTip(
             "Excel からコピーしたデータを取込みます。\n"
             "推奨列順（ヘッダーあり）: 企業名 / 郵便番号 / 住所 / 所属・役職 / 氏名\n"
-            "ヘッダーなしの場合は列数で自動判定します。"
+            "ヘッダーなし: 列数で自動判定（2列=企業名・氏名 / 5列=企業名・〒・住所・役職・氏名 など）"
         )
         btn_paste.clicked.connect(self._do_paste)
 
-        btn_csv = QPushButton("CSV から取込")
-        btn_csv.setFixedHeight(32)
-        btn_csv.setStyleSheet(BTN_OUTLINE)
+        btn_csv = _tb("CSV 取込")
         btn_csv.clicked.connect(self._do_csv)
 
-        btn_add = QPushButton("＋ 行を追加")
-        btn_add.setFixedHeight(32)
-        btn_add.setStyleSheet(BTN_OUTLINE)
+        # グループB：行編集
+        btn_add   = _tb("＋ 追加")
         btn_add.clicked.connect(self._add_row)
 
-        btn_del = QPushButton("選択行を削除")
-        btn_del.setFixedHeight(32)
-        btn_del.setStyleSheet(BTN_DANGER)
+        btn_del   = _tb("行を削除", _TB_DANGER)
         btn_del.clicked.connect(self._del_rows)
 
-        btn_clear = QPushButton("全件クリア")
-        btn_clear.setFixedHeight(32)
-        btn_clear.setStyleSheet(BTN_DANGER)
+        btn_clear = _tb("全クリア", _TB_DANGER)
         btn_clear.clicked.connect(self._clear_all)
 
-        self._btn_undo = QPushButton("元に戻す")
-        self._btn_undo.setFixedHeight(32)
-        self._btn_undo.setStyleSheet(BTN_OUTLINE)
-        self._btn_undo.setEnabled(False)
-        self._btn_undo.clicked.connect(self._undo)
-        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._undo)
-
-        ops1.addWidget(btn_paste)
-        ops1.addWidget(btn_csv)
-        ops1.addWidget(btn_add)
-        ops1.addWidget(btn_del)
-        ops1.addWidget(btn_clear)
-        ops1.addWidget(self._btn_undo)
-        ops1.addStretch()
-        root.addLayout(ops1)
-
-        # ── 2行目：自動処理 ──────────────────────────────────────────
-        ops2 = QHBoxLayout()
-        ops2.setSpacing(6)
-
-        btn_postal = QPushButton("郵便番号を自動入力")
-        btn_postal.setFixedHeight(32)
-        btn_postal.setStyleSheet(BTN_OUTLINE)
+        # グループC：自動補完
+        btn_postal = _tb("〒 自動補完")
         btn_postal.setToolTip(
             "住所が入力されていて郵便番号が空の行に、\n"
             "zipcloud API（インターネット接続必要）で郵便番号を補完します。"
         )
         btn_postal.clicked.connect(self._fill_postal_codes)
 
-        btn_kana = QPushButton("フリガナを自動入力")
-        btn_kana.setFixedHeight(32)
-        btn_kana.setStyleSheet(BTN_OUTLINE)
+        btn_kana = _tb("フリガナ補完")
         btn_kana.setToolTip(
             "事業所名が入力されていてフリガナが空の行に、\n"
             "カタカナのフリガナを自動補完します。\n"
@@ -517,17 +516,32 @@ class DirectLabelDialog(QDialog):
         )
         btn_kana.clicked.connect(self._fill_kana)
 
-        hint = QLabel(
-            "推奨列順（ヘッダーなし）: 企業名 → 郵便番号 → 住所 → 所属・役職 → 氏名"
-            "　※所属・役職は省略可（4列: 企業名→郵便番号→住所→氏名）"
-        )
-        hint.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        # グループD：アンドゥ
+        self._btn_undo = _tb("↩ 元に戻す")
+        self._btn_undo.setToolTip("Ctrl+Z")
+        self._btn_undo.setEnabled(False)
+        self._btn_undo.clicked.connect(self._undo)
+        QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._undo)
 
-        ops2.addWidget(btn_postal)
-        ops2.addWidget(btn_kana)
-        ops2.addStretch()
-        ops2.addWidget(hint)
-        root.addLayout(ops2)
+        toolbar.addWidget(btn_paste)
+        toolbar.addWidget(btn_csv)
+        toolbar.addSpacing(4)
+        toolbar.addWidget(_sep())
+        toolbar.addSpacing(4)
+        toolbar.addWidget(btn_add)
+        toolbar.addWidget(btn_del)
+        toolbar.addWidget(btn_clear)
+        toolbar.addSpacing(4)
+        toolbar.addWidget(_sep())
+        toolbar.addSpacing(4)
+        toolbar.addWidget(btn_postal)
+        toolbar.addWidget(btn_kana)
+        toolbar.addSpacing(4)
+        toolbar.addWidget(_sep())
+        toolbar.addSpacing(4)
+        toolbar.addWidget(self._btn_undo)
+        toolbar.addStretch()
+        root.addLayout(toolbar)
 
         self.table = QTableWidget(0, len(self._COLS))
         self._chk_header = CheckableHeader(self.table, initial_checked=True)
