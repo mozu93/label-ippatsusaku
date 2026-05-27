@@ -5,6 +5,7 @@ import webbrowser
 
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QMessageBox, QLabel
 from PyQt6.QtGui import QAction
+from PyQt6.QtCore import QSettings
 
 from app.ui.update_banner import UpdateBanner
 from app.ui.label_list import LabelListWidget
@@ -38,6 +39,20 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._label_list)
 
         self._setup_statusbar()
+        self._restore_geometry()
+
+    def _restore_geometry(self):
+        """前回終了時のウィンドウサイズ・位置を復元する"""
+        s = QSettings("mozu93", "label-ippatsusaku")
+        geometry = s.value("mainwindow/geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+
+    def closeEvent(self, event):
+        """終了時にウィンドウサイズ・位置を保存する"""
+        s = QSettings("mozu93", "label-ippatsusaku")
+        s.setValue("mainwindow/geometry", self.saveGeometry())
+        super().closeEvent(event)
 
     def _setup_statusbar(self):
         sb = self.statusBar()

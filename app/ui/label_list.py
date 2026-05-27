@@ -4,6 +4,8 @@
 """
 from datetime import datetime
 
+import os
+
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTableWidget, QTableWidgetItem,
@@ -19,7 +21,7 @@ from app.ui.theme import (
     BTN_PRIMARY, BTN_DANGER, BTN_OUTLINE,
     TABLE_STYLE, PAGE_TITLE_STYLE, PAGE_MARGIN,
     C_TEXT_SUB, BTN_H, BTN_H_SM, ROW_H,
-    font_page_title,
+    font_page_title, C_SUCCESS,
 )
 from app.ui.widgets import CheckableHeader, MODE_LABEL
 
@@ -153,7 +155,7 @@ class LabelListWidget(QWidget):
         self.table.setColumnWidth(COL_CNT,  60)
         self.table.setColumnWidth(COL_MODE, 110)
         self.table.setColumnWidth(COL_DATE, 145)
-        self.table.setColumnWidth(COL_OPS,  150)
+        self.table.setColumnWidth(COL_OPS,  210)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -361,11 +363,26 @@ class LabelListWidget(QWidget):
             btn_open.setToolTip("ダブルクリックでも開けます")
             btn_open.clicked.connect(lambda _, bid=b.id: self._open_batch(bid))
 
+            # PDF再オープンボタン（保存済みPDFが存在する場合のみ有効）
+            btn_pdf = QPushButton("PDF")
+            pdf_exists = bool(b.pdf_path and os.path.isfile(b.pdf_path))
+            btn_pdf.setEnabled(pdf_exists)
+            btn_pdf.setStyleSheet(
+                f"QPushButton {{ background: {'#E8F5E9' if pdf_exists else '#F5F5F5'}; "
+                f"color: {'#2E7D32' if pdf_exists else '#BDBDBD'}; "
+                f"border: 1px solid {'#A5D6A7' if pdf_exists else '#E0E0E0'}; "
+                f"border-radius: 4px; font-size: 12px; padding: 0 8px; }}"
+                f"QPushButton:hover:enabled {{ background: #C8E6C9; }}"
+            )
+            btn_pdf.setToolTip(b.pdf_path if pdf_exists else "PDFがまだ出力されていません")
+            btn_pdf.clicked.connect(lambda _, p=b.pdf_path: self._open_pdf(p))
+
             btn_del = QPushButton("削除")
             btn_del.setStyleSheet(BTN_DANGER)
             btn_del.clicked.connect(lambda _, bid=b.id: self._delete(bid))
 
             ops_layout.addWidget(btn_open)
+            ops_layout.addWidget(btn_pdf)
             ops_layout.addWidget(btn_del)
             self.table.setCellWidget(row, COL_OPS, ops)
 
@@ -465,6 +482,17 @@ class LabelListWidget(QWidget):
         dlg = DirectLabelDialog(batch_id=batch_id, parent=self)
         dlg.exec()
         self._load()
+
+    def _open_pdf(self, pdf_path: str):
+        """保存済みPDFをOSの既定アプリで開く"""
+        if not pdf_path or not os.path.isfile(pdf_path):
+            QMessageBox.warning(self, "PDFが見つかりません",
+                                f"ファイルが存在しません:\n{pdf_path}")
+            return
+        try:
+            os.startfile(os.path.normpath(pdf_path))
+        except Exception as e:
+            QMessageBox.warning(self, "PDFを開けません", str(e))
 
     # ── 削除 ──────────────────────────────────────────────────────────
 

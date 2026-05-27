@@ -13,10 +13,10 @@ from PyQt6.QtWidgets import (
     QComboBox, QLineEdit,
     QDialogButtonBox, QPlainTextEdit, QStyledItemDelegate,
     QAbstractItemDelegate, QApplication,
-    QCheckBox, QWidget, QFrame,
+    QCheckBox, QWidget, QFrame, QMenu,
 )
-from PyQt6.QtCore import Qt, QEvent
-from PyQt6.QtGui import QFont, QBrush, QColor, QKeySequence, QShortcut
+from PyQt6.QtCore import Qt, QEvent, QPoint, pyqtSignal
+from PyQt6.QtGui import QFont, QBrush, QColor, QKeySequence, QShortcut, QAction
 
 from app.database.models import get_session, LabelBatch, LabelEntry
 from app.utils.label_import import (
@@ -35,6 +35,42 @@ from app.utils.app_config import (
     get_label_save_path,
     get_direct_label_save_path, set_direct_label_save_path,
 )
+
+
+class _DraggableTable(QTableWidget):
+    """行のドラッグ＆ドロップ並び替えに対応した QTableWidget サブクラス。
+    cell widget（チェックボックス）を含む行を正しく移動するため、
+    dropEvent でシグナルを発行してダイアログ側で再構築する。"""
+
+    rows_dropped = pyqtSignal(int, list)   # (挿入先行番号, 移動元行番号リスト)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        # DragDrop モード: DropIndicator を表示しつつ Qt の自動移動は行わせない
+        self.setDragDropMode(QTableWidget.DragDropMode.DragDrop)
+        self.setDropIndicatorShown(True)
+        self.setDefaultDropAction(Qt.DropAction.CopyAction)
+
+    def dropEvent(self, event):
+        if event.source() is not self:
+            super().dropEvent(event)
+            return
+
+        target_row = self.indexAt(event.position().toPoint()).row()
+        if target_row < 0:
+            target_row = self.rowCount()
+
+        source_rows = sorted(set(idx.row() for idx in self.selectedIndexes()))
+
+        # IgnoreAction にすることで Qt がアイテムを自動削除するのを防ぐ
+        # 実際の並び替えは rows_dropped シグナルで受け取るダイアログ側が行う
+        event.setDropAction(Qt.DropAction.IgnoreAction)
+        event.accept()
+
+        if source_rows:
+            self.rows_dropped.emit(target_row, source_rows)
 
 
 class _MultilineDelegate(QStyledItemDelegate):
@@ -522,6 +558,7 @@ class DirectLabelDialog(QDialog):
         self._btn_undo.setEnabled(False)
         self._btn_undo.clicked.connect(self._undo)
         QShortcut(QKeySequence("Ctrl+Z"), self).activated.connect(self._undo)
+        QShortcut(QKeySequence("Ctrl+V"), self).activated.connect(self._do_paste)
 
         toolbar.addWidget(btn_paste)
         toolbar.addWidget(btn_csv)
@@ -543,7 +580,7 @@ class DirectLabelDialog(QDialog):
         toolbar.addStretch()
         root.addLayout(toolbar)
 
-        self.table = QTableWidget(0, len(self._COLS))
+        self.table = _DraggableTable(0, len(self._COLS))
         self._chk_header = CheckableHeader(self.table, initial_checked=True)
         self._chk_header.toggled.connect(self._on_header_toggled)
         self._chk_header.sort_requested.connect(self._on_sort)
@@ -575,6 +612,9 @@ class DirectLabelDialog(QDialog):
         self.table.setItemDelegateForColumn(self.COL_TITLE,   _MultilineDelegate(self.table))
         self.table.installEventFilter(self)
         self.table.itemChanged.connect(self._on_item_changed)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
+        self.table.rows_dropped.connect(self._on_rows_dropped)
         root.addWidget(self.table)
         self._chk_header.set_required_cols(
             self._REQUIRED_COLS.get("normal", set())
@@ -1100,6 +1140,102 @@ class DirectLabelDialog(QDialog):
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(row, col, item)
         self._apply_required_bg_to_row(row)
+        self._update_count()
+
+    def _show_context_menu(self, pos: QPoint):
+        """テーブル右クリックメニューを表示する"""
+        selected_rows = sorted({i.row() for i in self.table.selectedItems()})
+        menu = QMenu(self)
+
+        act_add = QAction("＋ 行を追加", self)
+        act_add.triggered.connect(self._add_row)
+        menu.addAction(act_add)
+
+        act_dup = QAction("この行を複製", self)
+        act_dup.setEnabled(bool(selected_rows))
+        act_dup.triggered.connect(self._duplicate_rows)
+        menu.addAction(act_dup)
+
+        menu.addSeparator()
+
+        act_del = QAction("選択行を削除", self)
+        act_del.setEnabled(bool(selected_rows))
+        act_del.triggered.connect(self._del_rows)
+        menu.addAction(act_del)
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _on_rows_dropped(self, target_row: int, source_rows: list):
+        """ドラッグ＆ドロップで行を並び替える"""
+        if not source_rows:
+            return
+
+        self._save_undo_snapshot()
+
+        # 全行のデータを読み取る（drop前の状態）
+        all_rows = []
+        for r in range(self.table.rowCount()):
+            chk = self._get_row_chk(r)
+            vals = [(self.table.item(r, c) or QTableWidgetItem()).text()
+                    for c in range(self.COL_COMPANY, len(self._COLS))]
+            all_rows.append((vals, chk.isChecked() if chk else True))
+
+        # 移動元を取り出して挿入先に差し込む
+        source_set = set(source_rows)
+        moving = [all_rows[r] for r in source_rows if r < len(all_rows)]
+        rest   = [row for i, row in enumerate(all_rows) if i not in source_set]
+
+        # 挿入位置：source_rows のうちターゲットより前にある行の数だけ補正
+        adj_target = target_row - sum(1 for r in source_rows if r < target_row)
+        adj_target = max(0, min(adj_target, len(rest)))
+
+        new_order = rest[:adj_target] + moving + rest[adj_target:]
+
+        # 順序が変わっていなければ何もしない（Undoスタックも戻す）
+        if new_order == all_rows:
+            if self._undo_stack:
+                self._undo_stack.pop()
+            self._btn_undo.setEnabled(bool(self._undo_stack))
+            return
+
+        # テーブルを再構築
+        self.table.setRowCount(0)
+        self._last_chk_row = None
+        for vals, checked in new_order:
+            self._add_row(vals)
+            chk = self._get_row_chk(self.table.rowCount() - 1)
+            if chk:
+                chk.blockSignals(True)
+                chk.setChecked(checked)
+                chk.blockSignals(False)
+        self._update_count()
+
+    def _duplicate_rows(self):
+        """選択行を直下に複製する"""
+        rows = sorted({i.row() for i in self.table.selectedItems()})
+        if not rows:
+            return
+        self._save_undo_snapshot()
+        for row in reversed(rows):
+            chk = self._get_row_chk(row)
+            vals = [(self.table.item(row, c) or QTableWidgetItem()).text()
+                    for c in range(self.COL_COMPANY, len(self._COLS))]
+            insert_at = row + 1
+            self.table.insertRow(insert_at)
+            new_chk = QCheckBox()
+            new_chk.setChecked(chk.isChecked() if chk else True)
+            new_chk.clicked.connect(self._on_chk_clicked)
+            cell = QWidget()
+            lay = QHBoxLayout(cell)
+            lay.setContentsMargins(0, 0, 0, 0)
+            lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lay.addWidget(new_chk)
+            self.table.setCellWidget(insert_at, self.COL_CHK, cell)
+            for offset, col in enumerate(range(self.COL_COMPANY, len(self._COLS))):
+                item = QTableWidgetItem(vals[offset] if offset < len(vals) else "")
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(insert_at, col, item)
+            self._apply_required_bg_to_row(insert_at)
         self._update_count()
 
     def _del_rows(self):
