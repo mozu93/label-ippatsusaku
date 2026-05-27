@@ -688,12 +688,16 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
     # 複数行のときは行間を詰める（行間 = フォントサイズの8%）、1行は標準
     LINE_H = 1.08 if n > 1 else 1.4
 
+    # 二行以上のとき上下に 3mm の余白を確保（フォントサイズを縮小して余白を生む）
+    V_PAD        = 3.0 * mm if n > 1 else 0.0
+    inner_h_eff  = inner_h - 2 * V_PAD
+
     # フォントサイズ：横幅制約と縦高さ制約の両方を満たす最大値（上限 125pt）
     # 上端制約: start_y + fs <= y0 + h
     #   start_y = y0 + h/2 + (n-1)*line_h/2 - fs*0.3 なので展開すると
     #   fs <= h / ((n-1)*LINE_H + 1.4)  ← 1.4 = 1.0(日本語文字高) + 0.7 - 0.3
     widest = max(lines, key=lambda ln: stringWidth(ln, font, 150.0))
-    fs_h   = min(inner_h / ((n - 1) * LINE_H + 1.4), 125.0)
+    fs_h   = min(inner_h_eff / ((n - 1) * LINE_H + 1.4), 125.0)
     fs     = min(_fit_text(widest, font, fs_h, inner_w, min_size=8.0), fs_h)
     line_h = fs * LINE_H
 
