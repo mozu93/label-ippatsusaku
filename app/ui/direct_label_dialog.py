@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QComboBox, QLineEdit,
     QDialogButtonBox, QPlainTextEdit, QStyledItemDelegate,
     QAbstractItemDelegate, QApplication,
-    QCheckBox, QWidget,
+    QCheckBox, QWidget, QFrame,
 )
 from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QFont, QBrush, QColor, QKeySequence, QShortcut
@@ -314,35 +314,77 @@ class DirectLabelDialog(QDialog):
         root.addLayout(name_row)
 
         top_form = QHBoxLayout()
-        top_form.setSpacing(16)
+        top_form.setSpacing(10)
         mode_lbl = QLabel("モード")
+        mode_lbl.setStyleSheet("font-size: 12px; color: #475569;")
         mode_lbl.setFixedWidth(44)
-        self._radio_normal    = QRadioButton("宛名ラベル（氏名あり）")
-        self._radio_no_person = QRadioButton("宛名ラベル（氏名なし）")
-        self._radio_simple    = QRadioButton("宛名ラベル（事業所名のみ）")
-        self._radio_nametag   = QRadioButton("名札")
-        self._radio_split4    = QRadioButton("卓上事業所名プレート")
-        for _rb in (self._radio_normal, self._radio_no_person, self._radio_simple,
-                    self._radio_nametag, self._radio_split4):
-            _rb.setStyleSheet(MODE_RADIO_STYLE)
+
+        # ── セグメントボタン（チェッカブル QPushButton） ──────────────
+        _C   = "#1565C0"   # primary color
+        _CH  = "#1976D2"   # hover
+        _SEG_H = 30        # ボタン高さ
+
+        def _seg(label: str, pos: str) -> QPushButton:
+            """pos: 'left' | 'mid' | 'right'"""
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setFixedHeight(_SEG_H)
+            r_tl = "4px" if pos == "left"  else "0px"
+            r_tr = "4px" if pos == "right" else "0px"
+            r_bl = "4px" if pos == "left"  else "0px"
+            r_br = "4px" if pos == "right" else "0px"
+            br   = "none" if pos != "right" else f"1px solid #CBD5E1"
+            btn.setStyleSheet(
+                f"QPushButton {{"
+                f"  background: white; color: {_C};"
+                f"  border-top: 1px solid #CBD5E1;"
+                f"  border-bottom: 1px solid #CBD5E1;"
+                f"  border-left: 1px solid #CBD5E1;"
+                f"  border-right: {br};"
+                f"  border-top-left-radius: {r_tl}; border-bottom-left-radius: {r_bl};"
+                f"  border-top-right-radius: {r_tr}; border-bottom-right-radius: {r_br};"
+                f"  font-size: 12px; font-family: 'Meiryo UI'; padding: 0 12px; }}"
+                f"QPushButton:checked {{"
+                f"  background: {_C}; color: white;"
+                f"  border-color: {_C}; }}"
+                f"QPushButton:hover:!checked {{ background: #EFF6FF; }}"
+            )
+            return btn
+
+        self._radio_normal    = _seg("宛名（氏名あり）",   "left")
+        self._radio_no_person = _seg("宛名（氏名なし）",   "mid")
+        self._radio_simple    = _seg("事業所名のみ",       "mid")
+        self._radio_nametag   = _seg("名札",               "mid")
+        self._radio_split4    = _seg("卓上プレート",       "right")
         self._radio_normal.setChecked(True)
+
         grp = QButtonGroup(self)
+        grp.setExclusive(True)
         grp.addButton(self._radio_normal,    0)
         grp.addButton(self._radio_no_person, 1)
         grp.addButton(self._radio_simple,    2)
         grp.addButton(self._radio_nametag,   3)
         grp.addButton(self._radio_split4,    4)
+
         self._radio_normal.toggled.connect(self._on_mode_toggled)
         self._radio_no_person.toggled.connect(self._on_mode_toggled)
         self._radio_simple.toggled.connect(self._on_mode_toggled)
         self._radio_nametag.toggled.connect(self._on_mode_toggled)
         self._radio_split4.toggled.connect(self._on_mode_toggled)
+
+        # セグメント全体を包む横レイアウト（間隔ゼロで隣接）
+        seg_wrap = QWidget()
+        seg_layout = QHBoxLayout(seg_wrap)
+        seg_layout.setContentsMargins(0, 0, 0, 0)
+        seg_layout.setSpacing(0)
+        seg_layout.addWidget(self._radio_normal)
+        seg_layout.addWidget(self._radio_no_person)
+        seg_layout.addWidget(self._radio_simple)
+        seg_layout.addWidget(self._radio_nametag)
+        seg_layout.addWidget(self._radio_split4)
+
         top_form.addWidget(mode_lbl)
-        top_form.addWidget(self._radio_normal)
-        top_form.addWidget(self._radio_no_person)
-        top_form.addWidget(self._radio_simple)
-        top_form.addWidget(self._radio_nametag)
-        top_form.addWidget(self._radio_split4)
+        top_form.addWidget(seg_wrap)
         top_form.addStretch()
         root.addLayout(top_form)
 
