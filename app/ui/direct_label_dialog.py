@@ -574,12 +574,12 @@ class DirectLabelDialog(QDialog):
         self.table.setItemDelegateForColumn(self.COL_COMPANY, _MultilineDelegate(self.table))
         self.table.setItemDelegateForColumn(self.COL_TITLE,   _MultilineDelegate(self.table))
         self.table.installEventFilter(self)
-        self.table.setColumnHidden(self.COL_BC_ADDR, True)
         self.table.itemChanged.connect(self._on_item_changed)
         root.addWidget(self.table)
         self._chk_header.set_required_cols(
             self._REQUIRED_COLS.get("normal", set())
         )
+        self._update_column_visibility()  # 初期モードに合わせて列表示を設定
 
         foot = QHBoxLayout()
         self._count_lbl = QLabel("0 件")
@@ -967,6 +967,15 @@ class DirectLabelDialog(QDialog):
         for row in range(self.table.rowCount()):
             self._apply_required_bg_to_row(row)
 
+    # モードごとに非表示にする列（COL_BC_ADDR は常時非表示のため除外）
+    _HIDDEN_COLS: dict[str, set] = {
+        "normal":    set(),
+        "no_person": {COL_TITLE, COL_PERSON},
+        "simple":    {COL_TITLE, COL_PERSON, COL_POSTAL, COL_ADDR},
+        "nametag":   {COL_POSTAL, COL_ADDR},
+        "split4":    {COL_TITLE, COL_PERSON, COL_POSTAL, COL_ADDR},
+    }
+
     def _on_mode_toggled(self, checked: bool):
         if not checked:
             return
@@ -985,6 +994,22 @@ class DirectLabelDialog(QDialog):
         if idx >= 0:
             self._layout_combo.setCurrentIndex(idx)
         self._update_required_highlights()
+        self._update_column_visibility()
+
+    def _update_column_visibility(self):
+        """モードに応じて不要な列を非表示にする"""
+        mode = self._current_mode()
+        hidden = self._HIDDEN_COLS.get(mode, set())
+        # CHK・COMPANY・KANA は常時表示、BC_ADDR は常時非表示
+        always_visible = {self.COL_CHK, self.COL_COMPANY, self.COL_KANA}
+        always_hidden  = {self.COL_BC_ADDR}
+        for col in range(len(self._COLS)):
+            if col in always_hidden:
+                self.table.setColumnHidden(col, True)
+            elif col in always_visible:
+                self.table.setColumnHidden(col, False)
+            else:
+                self.table.setColumnHidden(col, col in hidden)
 
     def _current_mode(self) -> str:
         if self._radio_no_person.isChecked():
