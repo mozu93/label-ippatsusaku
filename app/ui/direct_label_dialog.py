@@ -581,6 +581,41 @@ class DirectLabelDialog(QDialog):
         )
         self._update_column_visibility()  # 初期モードに合わせて列表示を設定
 
+        # ── 保存先表示行 ─────────────────────────────────────────────
+        save_row = QHBoxLayout()
+        save_row.setSpacing(6)
+
+        save_icon_lbl = QLabel("📁")
+        save_icon_lbl.setStyleSheet("font-size: 13px;")
+
+        save_title_lbl = QLabel("保存先:")
+        save_title_lbl.setStyleSheet("font-size: 12px; color: #64748B;")
+
+        self._save_path_lbl = QLabel()
+        self._save_path_lbl.setStyleSheet(
+            "font-size: 12px; color: #1565C0; "
+            "text-decoration: underline; cursor: pointer;"
+        )
+        self._save_path_lbl.setToolTip("クリックしてフォルダを変更")
+        self._save_path_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._save_path_lbl.mousePressEvent = lambda _: self._change_save_dir()
+        self._refresh_save_path_label()
+
+        btn_change_dir = QPushButton("変更")
+        btn_change_dir.setFixedHeight(24)
+        btn_change_dir.setStyleSheet(
+            "QPushButton { font-size: 11px; color: #475569; background: white; "
+            "border: 1px solid #CBD5E1; border-radius: 3px; padding: 0 8px; }"
+            "QPushButton:hover { background: #F1F5F9; }"
+        )
+        btn_change_dir.clicked.connect(self._change_save_dir)
+
+        save_row.addWidget(save_icon_lbl)
+        save_row.addWidget(save_title_lbl)
+        save_row.addWidget(self._save_path_lbl, 1)
+        save_row.addWidget(btn_change_dir)
+        root.addLayout(save_row)
+
         foot = QHBoxLayout()
         self._count_lbl = QLabel("0 件")
         self._count_lbl.setStyleSheet("color: #64748B; font-size: 12px;")
@@ -635,6 +670,32 @@ class DirectLabelDialog(QDialog):
         foot.addWidget(btn_cancel)
         foot.addWidget(self._btn_export)
         root.addLayout(foot)
+
+    def _refresh_save_path_label(self):
+        """保存先ラベルを現在の設定値で更新する"""
+        path = (
+            get_direct_label_save_path()
+            or get_label_save_path()
+            or os.path.expanduser("~/Documents")
+        )
+        # 長いパスは末尾を省略して表示
+        display = path if len(path) <= 60 else "…" + path[-57:]
+        self._save_path_lbl.setText(display)
+        self._save_path_lbl.setToolTip(path)
+
+    def _change_save_dir(self):
+        """保存先フォルダをユーザーに選択させて更新する"""
+        current = (
+            get_direct_label_save_path()
+            or get_label_save_path()
+            or os.path.expanduser("~/Documents")
+        )
+        new_dir = QFileDialog.getExistingDirectory(
+            self, "保存先フォルダを選択", current
+        )
+        if new_dir:
+            set_direct_label_save_path(new_dir)
+            self._refresh_save_path_label()
 
     def _on_barcode_toggled(self, enabled: bool):
         self.table.setColumnHidden(self.COL_BC_ADDR, not enabled)
@@ -1263,6 +1324,7 @@ class DirectLabelDialog(QDialog):
             return
 
         set_direct_label_save_path(dest_dir)
+        self._refresh_save_path_label()
 
         _s = get_session()
         try:
