@@ -3,7 +3,7 @@ import os
 import sys
 import webbrowser
 
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QMessageBox
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QMessageBox, QLabel
 from PyQt6.QtGui import QAction
 
 from app.ui.update_banner import UpdateBanner
@@ -36,6 +36,28 @@ class MainWindow(QMainWindow):
 
         self._label_list = LabelListWidget(self)
         layout.addWidget(self._label_list)
+
+        self._setup_statusbar()
+
+    def _setup_statusbar(self):
+        sb = self.statusBar()
+        sb.setStyleSheet(
+            "QStatusBar { background: #F8FAFC; border-top: 1px solid #E2E8F0; "
+            "font-size: 12px; color: #64748B; }"
+            "QStatusBar::item { border: none; }"
+        )
+
+        # 右側固定：バージョン表示
+        ver_lbl = QLabel(f"v{__version__}")
+        ver_lbl.setStyleSheet("color: #94A3B8; font-size: 11px; padding: 0 8px;")
+        sb.addPermanentWidget(ver_lbl)
+
+        # 初期メッセージ
+        sb.showMessage("準備完了")
+
+    def set_status(self, message: str):
+        """LabelListWidget などから件数情報を受け取り表示する"""
+        self.statusBar().showMessage(message)
 
     def _setup_menu(self):
         menubar = self.menuBar()

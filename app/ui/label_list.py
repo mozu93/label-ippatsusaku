@@ -259,6 +259,21 @@ class LabelListWidget(QWidget):
         self._pagination.reset()
         self._pagination.set_total(len(self._filtered))
         self._render_page()
+        self._update_statusbar()
+
+    def _update_statusbar(self):
+        """メインウィンドウのステータスバーにバッチ件数を表示する"""
+        win = self.window()
+        if not hasattr(win, "set_status"):
+            return
+        total    = len(self._batches)
+        filtered = len(self._filtered)
+        if total == 0:
+            win.set_status("ラベルバッチはまだありません")
+        elif filtered == total:
+            win.set_status(f"ラベルバッチ: {total} 件")
+        else:
+            win.set_status(f"ラベルバッチ: {total} 件中 {filtered} 件表示中")
 
     def _on_sort(self, col: int):
         if col in (COL_CHK, COL_OPS):
