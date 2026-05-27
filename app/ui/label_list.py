@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QStyle, QStyleOptionButton, QApplication,
-    QLineEdit, QComboBox,
+    QLineEdit, QComboBox, QStackedWidget,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -16,7 +16,7 @@ from PyQt6.QtGui import QFont
 from app.database.models import get_session, LabelBatch
 from app.ui.pagination_bar import PaginationBar
 from app.ui.theme import (
-    BTN_PRIMARY, BTN_DANGER,
+    BTN_PRIMARY, BTN_DANGER, BTN_OUTLINE,
     TABLE_STYLE, PAGE_TITLE_STYLE, PAGE_MARGIN,
     C_TEXT_SUB, BTN_H, BTN_H_SM, ROW_H,
     font_page_title,
@@ -153,7 +153,7 @@ class LabelListWidget(QWidget):
         self.table.setColumnWidth(COL_CNT,  60)
         self.table.setColumnWidth(COL_MODE, 110)
         self.table.setColumnWidth(COL_DATE, 145)
-        self.table.setColumnWidth(COL_OPS,  80)
+        self.table.setColumnWidth(COL_OPS,  150)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -168,12 +168,57 @@ class LabelListWidget(QWidget):
         """)
         self.table.itemClicked.connect(self._on_item_clicked)
         self.table.doubleClicked.connect(self._on_double_click)
-        layout.addWidget(self.table)
+
+        # ── Empty State ───────────────────────────────────────────────
+        self._empty_widget = self._build_empty_state()
+
+        # ── スタック（テーブル ↔ Empty State） ──────────────────────
+        self._stack = QStackedWidget()
+        self._stack.addWidget(self.table)          # index 0
+        self._stack.addWidget(self._empty_widget)  # index 1
+        layout.addWidget(self._stack)
 
         # ── ページネーション ──────────────────────────────
         self._pagination = PaginationBar()
         self._pagination.changed.connect(self._render_page)
         layout.addWidget(self._pagination)
+
+    def _build_empty_state(self) -> QWidget:
+        """データゼロ時に表示する Empty State ウィジェット"""
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.setSpacing(12)
+
+        icon_lbl = QLabel("📋")
+        icon_lbl.setStyleSheet("font-size: 48px;")
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._empty_title = QLabel("まだラベルがありません")
+        self._empty_title.setStyleSheet(
+            "font-size: 16px; font-weight: bold; color: #334155;"
+        )
+        self._empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._empty_sub = QLabel("「＋ 新規作成」からラベルを作成できます")
+        self._empty_sub.setStyleSheet("font-size: 13px; color: #64748B;")
+        self._empty_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._empty_btn = QPushButton("＋ 新規作成")
+        self._empty_btn.setFixedHeight(36)
+        self._empty_btn.setFixedWidth(160)
+        self._empty_btn.setStyleSheet(
+            "QPushButton { background: #1565C0; color: white; border-radius: 4px; "
+            "border: none; font-size: 13px; padding: 0 16px; }"
+            "QPushButton:hover { background: #1976D2; }"
+        )
+
+        v.addWidget(icon_lbl)
+        v.addWidget(self._empty_title)
+        v.addWidget(self._empty_sub)
+        v.addSpacing(4)
+        v.addWidget(self._empty_btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        return w
 
     # ── データ読み込み ─────────────────────────────────────────────────
 
@@ -256,6 +301,7 @@ class LabelListWidget(QWidget):
     def _render_page(self):
         start, end = self._pagination.slice_range()
         self._render(self._filtered_counts, self._filtered[start:end])
+        self._update_empty_state()
 
     def _render(self, counts: dict, batches: list | None = None):
         self.table.setRowCount(0)
@@ -295,10 +341,16 @@ class LabelListWidget(QWidget):
             ops_layout.setContentsMargins(4, 6, 4, 6)
             ops_layout.setSpacing(4)
 
+            btn_open = QPushButton("開く")
+            btn_open.setStyleSheet(BTN_OUTLINE)
+            btn_open.setToolTip("ダブルクリックでも開けます")
+            btn_open.clicked.connect(lambda _, bid=b.id: self._open_batch(bid))
+
             btn_del = QPushButton("削除")
             btn_del.setStyleSheet(BTN_DANGER)
             btn_del.clicked.connect(lambda _, bid=b.id: self._delete(bid))
 
+            ops_layout.addWidget(btn_open)
             ops_layout.addWidget(btn_del)
             self.table.setCellWidget(row, COL_OPS, ops)
 
@@ -340,6 +392,42 @@ class LabelListWidget(QWidget):
 
     def _update_bulk_btn(self):
         self._btn_bulk_del.setEnabled(bool(self._get_checked_ids()))
+
+    def _update_empty_state(self):
+        """データがゼロのときは Empty State を表示し、テーブルを隠す"""
+        has_filter = bool(
+            self._search_edit.text().strip()
+            or self._mode_filter.currentData()
+        )
+        if not self._filtered:
+            if has_filter:
+                self._empty_title.setText("検索結果がありません")
+                self._empty_sub.setText("検索条件を変更するか、フィルターをクリアしてください")
+                self._empty_btn.setText("フィルターをクリア")
+                try:
+                    self._empty_btn.clicked.disconnect()
+                except RuntimeError:
+                    pass
+                self._empty_btn.clicked.connect(self._clear_filter)
+            else:
+                self._empty_title.setText("まだラベルがありません")
+                self._empty_sub.setText("「＋ 新規作成」からラベルを作成できます")
+                self._empty_btn.setText("＋ 新規作成")
+                try:
+                    self._empty_btn.clicked.disconnect()
+                except RuntimeError:
+                    pass
+                self._empty_btn.clicked.connect(self._open_new)
+            self._stack.setCurrentIndex(1)
+            self._pagination.setVisible(False)
+        else:
+            self._stack.setCurrentIndex(0)
+            self._pagination.setVisible(True)
+
+    def _clear_filter(self):
+        """検索・フィルターをリセット"""
+        self._search_edit.clear()
+        self._mode_filter.setCurrentIndex(0)
 
     # ── ダイアログ操作 ────────────────────────────────────────────────────
 
