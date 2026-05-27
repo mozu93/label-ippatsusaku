@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QTableWidget, QTableWidgetItem,
     QHeaderView, QMessageBox, QStyle, QStyleOptionButton, QApplication,
+    QLineEdit, QComboBox,
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -84,6 +85,39 @@ class LabelListWidget(QWidget):
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
+        # ── 検索・フィルターバー ─────────────────────────────────────
+        filter_bar = QHBoxLayout()
+        filter_bar.setSpacing(8)
+
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("🔍  ラベル名で検索...")
+        self._search_edit.setFixedHeight(32)
+        self._search_edit.setStyleSheet(
+            "QLineEdit { border: 1px solid #CBD5E1; border-radius: 4px; "
+            "padding: 0 10px; font-size: 13px; background: white; }"
+            "QLineEdit:focus { border-color: #1565C0; }"
+        )
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.textChanged.connect(self._apply_filter)
+
+        self._mode_filter = QComboBox()
+        self._mode_filter.setFixedHeight(32)
+        self._mode_filter.setFixedWidth(160)
+        self._mode_filter.setStyleSheet(
+            "QComboBox { border: 1px solid #CBD5E1; border-radius: 4px; "
+            "padding: 0 8px; font-size: 13px; background: white; }"
+            "QComboBox:focus { border-color: #1565C0; }"
+            "QComboBox::drop-down { border: none; width: 24px; }"
+        )
+        self._mode_filter.addItem("モード: すべて", "")
+        for key, label in MODE_LABEL.items():
+            self._mode_filter.addItem(label, key)
+        self._mode_filter.currentIndexChanged.connect(self._apply_filter)
+
+        filter_bar.addWidget(self._search_edit)
+        filter_bar.addWidget(self._mode_filter)
+        layout.addLayout(filter_bar)
+
         # ── 一括削除バー ──────────────────────────────────────────────
         bulk_bar = QHBoxLayout()
         self._btn_bulk_del = QPushButton("チェックした項目を削除")
@@ -159,10 +193,24 @@ class LabelListWidget(QWidget):
 
         self._chk_header.set_checked(False)
         self._filtered_counts = counts
-        self._filtered = list(self._batches)
         self._sort_col = None
         self._sort_asc = True
         self._update_sort_headers()
+        # 検索・フィルターを再適用（リロード後もフィルター状態を維持）
+        self._apply_filter()
+
+    def _apply_filter(self):
+        """検索テキストとモードフィルターに基づいて一覧を絞り込む"""
+        keyword = self._search_edit.text().strip().lower()
+        mode_key = self._mode_filter.currentData()
+
+        self._filtered = [
+            b for b in self._batches
+            if (not keyword or keyword in (b.batch_name or "").lower())
+            and (not mode_key or b.label_mode == mode_key)
+        ]
+
+        self._chk_header.set_checked(False)
         self._pagination.reset()
         self._pagination.set_total(len(self._filtered))
         self._render_page()
