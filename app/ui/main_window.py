@@ -76,6 +76,12 @@ class MainWindow(QMainWindow):
 
     def _setup_menu(self):
         menubar = self.menuBar()
+
+        file_menu = menubar.addMenu("ファイル")
+        act_print_offset = QAction("印刷位置補正...", self)
+        act_print_offset.triggered.connect(self._open_print_offset_dialog)
+        file_menu.addAction(act_print_offset)
+
         help_menu = menubar.addMenu("ヘルプ")
 
         act_manual = QAction("マニュアルを開く", self)
@@ -87,6 +93,11 @@ class MainWindow(QMainWindow):
         act_about = QAction("バージョン情報", self)
         act_about.triggered.connect(self._show_about)
         help_menu.addAction(act_about)
+
+    def _open_print_offset_dialog(self):
+        from app.ui.print_offset_dialog import PrintOffsetDialog
+        dlg = PrintOffsetDialog(self)
+        dlg.exec()
 
     def _open_manual(self):
         path = _manual_path()
