@@ -90,7 +90,7 @@ def test_label_origin_applies_offset():
     x0, y0 = svc._label_origin(0, 0, layout)
     x1, y1 = svc._label_origin(0, 0, layout, offset_h_mm=3.0, offset_v_mm=-2.0)
     assert x1 == pytest.approx(x0 + 3.0 * mm)
-    assert y1 == pytest.approx(y0 - 2.0 * mm)
+    assert y1 == pytest.approx(y0 + 2.0 * mm)
 
 
 def test_label_origin_default_offset_is_unchanged():

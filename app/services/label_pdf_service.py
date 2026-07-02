@@ -156,7 +156,7 @@ def _label_origin(col: int, row: int, layout: LabelLayout,
     page_h = layout.page_h_mm * mm
     lw = layout.label_w_mm  * mm
     lh = layout.label_h_mm  * mm
-    mt = (layout.margin_top_mm  - offset_v_mm) * mm
+    mt = (layout.margin_top_mm  + offset_v_mm) * mm
     ml = (layout.margin_left_mm + offset_h_mm) * mm
     gh = layout.gap_h_mm * mm
     gv = layout.gap_v_mm * mm
