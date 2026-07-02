@@ -166,6 +166,25 @@ def _label_origin(col: int, row: int, layout: LabelLayout) -> tuple[float, float
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  裁断ガイド（卓上プレート専用）
+# ══════════════════════════════════════════════════════════════════════
+
+def _draw_plate_cut_guide(c: Canvas, layout: LabelLayout, page_w: float) -> None:
+    """
+    卓上プレート（a4_4split）専用：印刷後にカットする目安として、
+    用紙右端から7mm内側にページ全体を貫く縦の点線を描画する。
+    """
+    x = page_w - 7.0 * mm
+    page_h = layout.page_h_mm * mm
+    c.saveState()
+    c.setStrokeColor(C_BORDER)
+    c.setLineWidth(0.3 * mm)
+    c.setDash([2.0 * mm, 1.5 * mm])
+    c.line(x, 0, x, page_h)
+    c.restoreState()
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  メイン関数
 # ══════════════════════════════════════════════════════════════════════
 
@@ -199,6 +218,9 @@ def generate_label_pdf(
     c = Canvas(output_path, pagesize=(page_w, page_h))
     c.setTitle("宛名ラベル")
 
+    if layout_key == "a4_4split":
+        _draw_plate_cut_guide(c, layout, page_w)
+
     # a4_4split: 各エントリを2スロット分（回転＋通常）に展開
     #   slot 0（row 0, 180°回転）＋ slot 1（row 1, 通常）→ 同一エントリ
     #   slot 2（row 2, 180°回転）＋ slot 3（row 3, 通常）→ 同一エントリ
@@ -212,6 +234,8 @@ def generate_label_pdf(
         # ページ送り
         if slot > 0 and slot % per_page == 0:
             c.showPage()
+            if layout_key == "a4_4split":
+                _draw_plate_cut_guide(c, layout, page_w)
 
         page_slot = slot % per_page
         col = page_slot % layout.cols
