@@ -41,3 +41,14 @@ def set_direct_label_save_path(path: str):
     cfg = _load()
     cfg["direct_label_save_path"] = path
     _save(cfg)
+
+
+def get_label_offset(layout_key: str) -> tuple[float, float]:
+    entry = _load().get("label_offset", {}).get(layout_key, {})
+    return entry.get("h_mm", 0.0), entry.get("v_mm", 0.0)
+
+
+def save_label_offset(layout_key: str, h_mm: float, v_mm: float) -> None:
+    cfg = _load()
+    cfg.setdefault("label_offset", {})[layout_key] = {"h_mm": h_mm, "v_mm": v_mm}
+    _save(cfg)
