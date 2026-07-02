@@ -506,7 +506,7 @@ class LabelListWidget(QWidget):
                 self._empty_btn.setText("フィルターをクリア")
                 try:
                     self._empty_btn.clicked.disconnect()
-                except RuntimeError:
+                except (RuntimeError, TypeError):
                     pass
                 self._empty_btn.clicked.connect(self._clear_filter)
             else:
@@ -515,7 +515,7 @@ class LabelListWidget(QWidget):
                 self._empty_btn.setText("＋ 新規作成")
                 try:
                     self._empty_btn.clicked.disconnect()
-                except RuntimeError:
+                except (RuntimeError, TypeError):
                     pass
                 self._empty_btn.clicked.connect(self._open_new)
             self._stack.setCurrentIndex(1)
