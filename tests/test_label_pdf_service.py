@@ -8,6 +8,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 
 from app.services.label_pdf_service import generate_label_pdf
+from app.services import label_pdf_service as svc
 
 
 class _FakeEntry:
@@ -82,3 +83,64 @@ def test_other_layout_has_no_cut_guide_line(tmp_path):
     )
     doc = fitz.open(out)
     assert _dashed_vlines(doc[0]) == []
+
+
+def test_label_origin_applies_offset():
+    layout = svc.LABEL_LAYOUTS["a_one_28185"]
+    x0, y0 = svc._label_origin(0, 0, layout)
+    x1, y1 = svc._label_origin(0, 0, layout, offset_h_mm=3.0, offset_v_mm=-2.0)
+    assert x1 == pytest.approx(x0 + 3.0 * mm)
+    assert y1 == pytest.approx(y0 - 2.0 * mm)
+
+
+def test_label_origin_default_offset_is_unchanged():
+    layout = svc.LABEL_LAYOUTS["a_one_28185"]
+    x0, y0 = svc._label_origin(1, 2, layout)
+    x1, y1 = svc._label_origin(1, 2, layout, 0.0, 0.0)
+    assert x0 == pytest.approx(x1)
+    assert y0 == pytest.approx(y1)
+
+
+def test_draw_label_applies_safety_margin_for_normal_mode():
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    captured = {}
+
+    def fake_draw_normal(c, x0, y0, w, h, *args, **kwargs):
+        captured.update(x0=x0, y0=y0, w=w, h=h)
+
+    orig = svc._draw_normal
+    svc._draw_normal = fake_draw_normal
+    try:
+        c = Canvas(BytesIO())
+        entry = _FakeEntry(entry_mode="normal")
+        svc._draw_label(c, entry, x0=10.0, y0=20.0, w=200.0, h=100.0, mode="normal")
+    finally:
+        svc._draw_normal = orig
+
+    assert captured["x0"] == pytest.approx(10.0 + svc._SAFETY_H)
+    assert captured["y0"] == pytest.approx(20.0 + svc._SAFETY_V)
+    assert captured["w"]  == pytest.approx(200.0 - 2 * svc._SAFETY_H)
+    assert captured["h"]  == pytest.approx(100.0 - 2 * svc._SAFETY_V)
+
+
+def test_draw_label_skips_safety_margin_for_split4_mode():
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    captured = {}
+
+    def fake_draw_split4(c, x0, y0, w, h, *args, **kwargs):
+        captured.update(x0=x0, y0=y0, w=w, h=h)
+
+    orig = svc._draw_split4
+    svc._draw_split4 = fake_draw_split4
+    try:
+        c = Canvas(BytesIO())
+        entry = _FakeEntry(entry_mode="split4")
+        svc._draw_label(c, entry, x0=10.0, y0=20.0, w=200.0, h=100.0, mode="split4")
+    finally:
+        svc._draw_split4 = orig
+
+    assert captured == {"x0": 10.0, "y0": 20.0, "w": 200.0, "h": 100.0}
