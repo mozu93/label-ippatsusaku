@@ -144,3 +144,41 @@ def test_draw_label_skips_safety_margin_for_split4_mode():
         svc._draw_split4 = orig
 
     assert captured == {"x0": 10.0, "y0": 20.0, "w": 200.0, "h": 100.0}
+
+
+def test_generate_label_pdf_offset_shifts_rendered_text(tmp_path):
+    """generate_label_pdf の offset_h_mm/offset_v_mm が実際のPDF描画位置に
+    正しく反映されることを、fitzでテキスト位置を読み取って確認する結合テスト。
+
+    reportlab(Y軸: 下から上)とfitz(テキストbbox: Y軸上から下)の座標系の違いを
+    実測した上で導出した関係式を使う:
+      fitz上でのXの差分 = offset_h_mm * mm （符号反転なし）
+      fitz上でのYの差分 = offset_v_mm * mm （Y軸反転が2回起きるため符号反転なしで一致）
+    """
+    entry = _FakeEntry(company_name="オフセットテスト株式会社", entry_mode="normal")
+    entry.postal_code = "1000001"
+    entry.address1 = "東京都千代田区"
+
+    out0 = str(tmp_path / "base.pdf")
+    out1 = str(tmp_path / "offset.pdf")
+
+    generate_label_pdf([entry], out0, batch_mode="normal", layout_key="a_one_28185")
+    generate_label_pdf([entry], out1, batch_mode="normal", layout_key="a_one_28185",
+                        offset_h_mm=5.0, offset_v_mm=-3.0)
+
+    def _find_span_xy(path, text):
+        doc = fitz.open(path)
+        page = doc[0]
+        d = page.get_text("dict")
+        for block in d["blocks"]:
+            for line in block.get("lines", []):
+                for span in line["spans"]:
+                    if text in span["text"]:
+                        return span["bbox"][0], span["bbox"][1]
+        raise AssertionError(f"{text!r} not found in {path}")
+
+    x0, y0 = _find_span_xy(out0, "1000001")
+    x1, y1 = _find_span_xy(out1, "1000001")
+
+    assert x1 - x0 == pytest.approx(5.0 * mm, abs=0.5)
+    assert y1 - y0 == pytest.approx(-3.0 * mm, abs=0.5)
