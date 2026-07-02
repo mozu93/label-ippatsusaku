@@ -717,10 +717,10 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
         mode  = 2 if bold else 0    # 2 = fill + stroke
 
         if len(line) == 2:
-            # 2文字：前後に半角スペースの1/4幅を余白として均等割付
-            pad = stringWidth(" ", font, fs) / 4
+            # 2文字：前後に全角スペース2.5文字分の余白を確保して均等割付
+            pad = stringWidth("　", font, fs) * 2.5
             cw  = [stringWidth(ch, font, fs) for ch in line]
-            gap = inner_w - 2 * pad - sum(cw)
+            gap = max(0.0, inner_w - 2 * pad - sum(cw))
             x   = x0 + P + pad
             for j, ch in enumerate(line):
                 c.drawString(x, cur_y, ch, mode=mode)
