@@ -20,7 +20,7 @@
 本アプリでは、上記の集大成である「クリップ＋安全余白（水平5mm・垂直2mm）＋ユーザー調整可能な印刷位置補正」を全て移植する。ただし以下の点で移植先の実情に合わせて変更する:
 
 - 設定UIは移植元の「設定タブ」ではなく、**ファイルメニューの「印刷位置補正...」項目**から開くダイアログとする（本アプリはタブ形式の設定画面を持たないため）
-- 設定値の永続化は、移植元の独自JSON設定（`app_config.py`）ではなく、**本アプリが既に使用している `QSettings("mozu93", "label-ippatsusaku")`** に統一する
+- 設定値の永続化は、本アプリに既に存在する `app/utils/app_config.py`（JSON設定ファイル、`direct_label_save_path` 等で使用中）に関数を追加する形で行う。移植元 `cci-billing-label` の `app_config.py` と同じ系譜の仕組みであり、本アプリの既存パターンにも合致する。
 - **卓上プレート（`split4` モード）は対象外**とする。理由: `split4` はシール用紙ではなくA4用紙に直接印刷する形式で、大きな文字を目一杯のレイアウトで描画する設計のため、安全余白による縮小がデザインを崩す。また直近追加した裁断ガイド機能（`docs/superpowers/specs/2026-07-02-plate-cut-guide-design.md`）はA4用紙の絶対座標を前提としており、印刷位置補正の対象にしない。
 
 ---
@@ -72,9 +72,23 @@ mt = (layout.margin_top_mm  + offset_v_mm) * mm
 `split4`（`a4_4split` レイアウト）選択時は、呼び出し側が常に `offset_h_mm=0.0, offset_v_mm=0.0`
 を渡す（補正を無効化する）。
 
-### 2.4 設定の永続化（QSettings）
+### 2.4 設定の永続化（app_config.py）
 
-キー命名規則: `label_offset/{layout_key}/h_mm`, `label_offset/{layout_key}/v_mm`
+`app/utils/app_config.py` に以下の2関数を追加する:
+
+```python
+def get_label_offset(layout_key: str) -> tuple[float, float]:
+    entry = _load().get("label_offset", {}).get(layout_key, {})
+    return entry.get("h_mm", 0.0), entry.get("v_mm", 0.0)
+
+
+def save_label_offset(layout_key: str, h_mm: float, v_mm: float) -> None:
+    cfg = _load()
+    cfg.setdefault("label_offset", {})[layout_key] = {"h_mm": h_mm, "v_mm": v_mm}
+    _save(cfg)
+```
+
+`_DEFAULTS` に `"label_offset": {}` を追加する。
 
 対象レイアウトキー: `a_one_28185`, `a_one_28187`, `a_one_51002`（`a4_4split` は対象外）
 
@@ -97,13 +111,14 @@ mt = (layout.margin_top_mm  + offset_v_mm) * mm
   内容が下にずれる → 縦補正を負に　内容が上にずれる → 縦補正を正に」
 - 対象3レイアウトそれぞれについて、`QGroupBox`（レイアウト名をタイトルに）内に
   「横補正」「縦補正」の `QDoubleSpinBox`（範囲-15.0〜15.0、刻み0.5、小数点1桁、単位mm表示）
-- 「保存」ボタンでQSettingsに書き込み、保存完了メッセージを表示してダイアログを閉じる
+- 「保存」ボタンで `app_config.save_label_offset()` に書き込み、保存完了メッセージを表示してダイアログを閉じる
 
 ### 2.6 PDF生成呼び出し箇所への反映
 
 `app/ui/direct_label_dialog.py` の2箇所（プレビュー生成・PDF保存）で、
 `generate_label_pdf()` 呼び出し前に選択中の `layout_key` に対応する補正値を
-QSettingsから読み込み、`layout_key == "a4_4split"` の場合は `0.0, 0.0` を渡す。
+`app_config.get_label_offset()` から読み込み、`layout_key == "a4_4split"` の場合は
+`0.0, 0.0` を渡す。
 
 ---
 
@@ -111,6 +126,7 @@ QSettingsから読み込み、`layout_key == "a4_4split"` の場合は `0.0, 0.0
 
 **対象ファイル:**
 - 修正: `app/services/label_pdf_service.py`（クリップパス・安全余白・オフセットパラメータ追加）
+- 修正: `app/utils/app_config.py`（`get_label_offset` / `save_label_offset` 追加）
 - 修正: `app/ui/main_window.py`（ファイルメニュー新設）
 - 新規: `app/ui/print_offset_dialog.py`（印刷位置補正ダイアログ）
 - 修正: `app/ui/direct_label_dialog.py`（PDF生成2箇所でオフセット読み込み・受け渡し）
@@ -126,7 +142,9 @@ QSettingsから読み込み、`layout_key == "a4_4split"` の場合は `0.0, 0.0
     （クリップパスの存在、またはテキスト描画位置が安全余白の内側にあること）を確認するテスト
   - `split4` モードでは、`offset_h_mm`/`offset_v_mm` を指定してもラベル原点が
     変化しない（無効化される）ことを確認するテスト
-- QSettingsの読み書きは薄いラッパー関数として実装し、単体テストを追加する
+- `app_config.get_label_offset` / `save_label_offset` の読み書きラウンドトリップを
+  確認する単体テストを追加する（既存の `get_direct_label_save_path` 等と同様に、
+  `_CONFIG_DIR` / `_CONFIG_PATH` をテスト用一時ディレクトリに向けてテストする）
 
 ---
 
