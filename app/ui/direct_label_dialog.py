@@ -36,6 +36,7 @@ from app.ui.column_mapping_dialog import ColumnMappingDialog
 from app.utils.app_config import (
     get_label_save_path,
     get_direct_label_save_path, set_direct_label_save_path,
+    get_label_offset,
 )
 
 
@@ -1062,6 +1063,9 @@ class DirectLabelDialog(QDialog):
         mode       = self._current_mode()
         layout_key = self._layout_combo.currentData() or DEFAULT_LAYOUT_KEY
         font_key   = self._font_combo.currentData()   or DEFAULT_FONT_KEY
+        offset_h, offset_v = (
+            (0.0, 0.0) if layout_key == "a4_4split" else get_label_offset(layout_key)
+        )
 
         # テーブルの選択行を LabelEntry 互換の軽量オブジェクトに変換
         entries = []
@@ -1084,7 +1088,8 @@ class DirectLabelDialog(QDialog):
         buf = BytesIO()
         try:
             generate_label_pdf(entries, buf, mode, layout_key, font_key,
-                               barcode_enabled=self._chk_barcode.isChecked())
+                               barcode_enabled=self._chk_barcode.isChecked(),
+                               offset_h_mm=offset_h, offset_v_mm=offset_v)
         except Exception as ex:
             QMessageBox.critical(self, "プレビューエラー",
                                  f"PDF の生成に失敗しました：\n{ex}")
@@ -1291,9 +1296,13 @@ class DirectLabelDialog(QDialog):
 
         layout_key = self._layout_combo.currentData() or DEFAULT_LAYOUT_KEY
         font_key   = self._font_combo.currentData()   or DEFAULT_FONT_KEY
+        offset_h, offset_v = (
+            (0.0, 0.0) if layout_key == "a4_4split" else get_label_offset(layout_key)
+        )
         try:
             generate_label_pdf(orm_entries, os.path.normpath(pdf_path), mode, layout_key, font_key,
-                               barcode_enabled=self._chk_barcode.isChecked())
+                               barcode_enabled=self._chk_barcode.isChecked(),
+                               offset_h_mm=offset_h, offset_v_mm=offset_v)
         except Exception as ex:
             QMessageBox.critical(self, "PDF 出力エラー", f"PDF の生成に失敗しました：\n{ex}")
             return
