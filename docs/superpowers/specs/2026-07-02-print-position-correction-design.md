@@ -88,7 +88,10 @@ def save_label_offset(layout_key: str, h_mm: float, v_mm: float) -> None:
     _save(cfg)
 ```
 
-`_DEFAULTS` に `"label_offset": {}` を追加する。
+`_DEFAULTS` は変更しない（`dict(_DEFAULTS)` は浅いコピーのため、ミュータブルな
+辞書をデフォルト値に加えると `_load()` 呼び出しのたびに `_DEFAULTS` 自体が
+書き換えられてしまう）。`.get("label_offset", {})` / `.setdefault("label_offset", {})`
+をその場で使うことで、既存の `_load()` / `_DEFAULTS` には手を加えない。
 
 対象レイアウトキー: `a_one_28185`, `a_one_28187`, `a_one_51002`（`a4_4split` は対象外）
 
