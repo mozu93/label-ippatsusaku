@@ -758,11 +758,11 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic"):
         cur_y = start_y - i * line_h
         mode  = 2 if bold else 0    # 2 = fill + stroke
 
-        if len(line) == 2:
-            # 2文字：左右端に寄せず、文字間に全角スペース1文字分の間隔を空けて中央配置
+        if len(line) <= 3:
+            # 3文字以下：文字間に全角1文字分の間隔を空けてセル中央に配置
             cw      = [stringWidth(ch, font, fs) for ch in line]
             sp      = stringWidth("　", font, fs)
-            block_w = cw[0] + sp + cw[1]
+            block_w = sum(cw) + sp * (len(line) - 1)
             x       = x0 + P + (inner_w - block_w) / 2
             for j, ch in enumerate(line):
                 c.drawString(x, cur_y, ch, mode=mode)
