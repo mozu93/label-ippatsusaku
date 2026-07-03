@@ -24,7 +24,7 @@ class _FakeEntry:
         self.barcode_address = ""
 
 
-_EXPECTED_X = A4[0] - 7 * mm
+_EXPECTED_X = A4[0] - 11 * mm
 
 
 def _dashed_vlines(page):
@@ -125,7 +125,7 @@ def test_draw_label_applies_safety_margin_for_normal_mode():
     assert captured["h"]  == pytest.approx(100.0 - 2 * svc._SAFETY_V)
 
 
-def test_draw_label_skips_safety_margin_for_split4_mode():
+def test_draw_label_applies_plate_safety_margin_for_split4_mode():
     from io import BytesIO
     from reportlab.pdfgen.canvas import Canvas
 
@@ -143,7 +143,10 @@ def test_draw_label_skips_safety_margin_for_split4_mode():
     finally:
         svc._draw_split4 = orig
 
-    assert captured == {"x0": 10.0, "y0": 20.0, "w": 200.0, "h": 100.0}
+    assert captured["x0"] == pytest.approx(10.0 + svc._SAFETY_PLATE)
+    assert captured["y0"] == pytest.approx(20.0 + svc._SAFETY_PLATE)
+    assert captured["w"]  == pytest.approx(200.0 - 2 * svc._SAFETY_PLATE)
+    assert captured["h"]  == pytest.approx(100.0 - 2 * svc._SAFETY_PLATE)
 
 
 def test_generate_label_pdf_offset_shifts_rendered_text(tmp_path):

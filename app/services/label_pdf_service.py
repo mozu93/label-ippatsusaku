@@ -95,7 +95,7 @@ LABEL_LAYOUTS: dict[str, LabelLayout] = {
         label_w_mm     = 70.0,
         label_h_mm     = 42.3,
         margin_top_mm  = 21.5,
-        margin_left_mm = 0.0,
+        margin_left_mm = 4.0,   # 全体を右方向に4mmシフト
         gap_h_mm       = 0.0,   # 水平間隔70mm − ラベル幅70mm = 0
         gap_v_mm       = 0.0,   # 垂直間隔42.3mm − ラベル高42.3mm = 0
         page_h_mm      = 296.9, # ラベル用紙実寸（A4標準297mmより0.1mm短い）
@@ -174,9 +174,9 @@ def _label_origin(col: int, row: int, layout: LabelLayout,
 def _draw_plate_cut_guide(c: Canvas, layout: LabelLayout, page_w: float) -> None:
     """
     卓上プレート（a4_4split）専用：印刷後にカットする目安として、
-    用紙右端から7mm内側にページ全体を貫く縦の点線を描画する。
+    用紙右端から11mm内側にページ全体を貫く縦の点線を描画する。
     """
-    x = page_w - 7.0 * mm
+    x = page_w - 11.0 * mm
     page_h = layout.page_h_mm * mm
     c.saveState()
     c.setStrokeColor(C_BORDER)
@@ -249,20 +249,15 @@ def generate_label_pdf(
         mode = batch_mode if entry.entry_mode == "inherit" else entry.entry_mode
 
         # a4_4split: row 0・2（上から1・3番）を 180° 回転して印刷
-        # row 0（1番目）と row 3（4番目）は印字位置を 7.5mm ずらす
         if layout_key == "a4_4split":
-            _PLATE_SHIFT = 7.5 * mm
-            plate_offset = -_PLATE_SHIFT if row in (0, 3) else 0.0
             if row % 2 == 0:
                 c.saveState()
                 c.translate(x0 + lw / 2, y0 + lh / 2)
                 c.rotate(180)
-                _draw_label(c, entry, -lw / 2, -lh / 2, lw, lh, mode, font, barcode_enabled,
-                            plate_y_offset=plate_offset)
+                _draw_label(c, entry, -lw / 2, -lh / 2, lw, lh, mode, font, barcode_enabled)
                 c.restoreState()
             else:
-                _draw_label(c, entry, x0, y0, lw, lh, mode, font, barcode_enabled,
-                            plate_y_offset=plate_offset)
+                _draw_label(c, entry, x0, y0, lw, lh, mode, font, barcode_enabled)
         else:
             _draw_label(c, entry, x0, y0, lw, lh, mode, font, barcode_enabled)
         slot += 1
@@ -299,13 +294,13 @@ def _split_line(text: str, font: str, fs: float, max_w: float) -> tuple[str, str
     return text[:lo], text[lo:]
 
 
-_SAFETY_H = 5.0 * mm   # 水平安全余白（左右各5mm）
+_SAFETY_H = 3.0 * mm   # 水平安全余白（左右各3mm）
 _SAFETY_V = 2.0 * mm   # 垂直安全余白（上下各2mm）
+_SAFETY_PLATE = 3.0 * mm  # 卓上プレート安全余白（上下左右各3mm）
 
 
 def _draw_label(c, entry, x0: float, y0: float, w: float, h: float, mode: str,
-                font: str = "MSPGothic", barcode_enabled: bool = False,
-                plate_y_offset: float = 0.0):
+                font: str = "MSPGothic", barcode_enabled: bool = False):
     c.saveState()
 
     # ラベル枠の外にはみ出さないようクリップ
@@ -313,9 +308,12 @@ def _draw_label(c, entry, x0: float, y0: float, w: float, h: float, mode: str,
     clip.rect(x0, y0, w, h)
     c.clipPath(clip, stroke=0, fill=0)
 
-    # 印刷ズレを考慮してセル内側に安全余白を設ける（卓上プレートは対象外）
+    # 印刷ズレを考慮してセル内側に安全余白を設ける
     if mode == "split4":
-        xs, ys, ws, hs = x0, y0, w, h
+        xs = x0 + _SAFETY_PLATE
+        ys = y0 + _SAFETY_PLATE
+        ws = w  - 2 * _SAFETY_PLATE
+        hs = h  - 2 * _SAFETY_PLATE
     else:
         xs = x0 + _SAFETY_H
         ys = y0 + _SAFETY_V
@@ -338,7 +336,7 @@ def _draw_label(c, entry, x0: float, y0: float, w: float, h: float, mode: str,
     elif mode == "nametag":
         _draw_nametag(c, xs, ys, ws, hs, company, title, person, font)
     elif mode == "split4":
-        _draw_split4(c, xs, ys, ws, hs, company, font, plate_y_offset)
+        _draw_split4(c, xs, ys, ws, hs, company, font)
     else:
         _draw_normal(c, xs, ys, ws, hs, company, postal, addr1, addr2, title, person, font,
                      barcode_enabled, barcode_addr)
@@ -711,13 +709,11 @@ def _draw_simple(c, x0, y0, w, h, company, font: str = "MSPGothic"):
 
 # ── プレートモード ──────────────────────────────────────────────────────
 
-def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
-                 y_offset: float = 0.0):
+def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic"):
     """
     プレートモード：ユーザーが入力した改行（\\n）で区切られた各行を
     均等割付・上下中央で描画。自動折り返しなし。
     row 0・2 の 180° 回転は generate_label_pdf 側で処理する。
-    y_offset: start_y への加算値（pt）。row 0/3 の印字位置微調整に使用。
     """
     if not company:
         return
@@ -749,7 +745,7 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
     line_h = fs * LINE_H
 
     # 上下中央：テキストブロック全体の視覚中心をラベル中央に合わせる
-    start_y = y0 + h / 2 + (n - 1) * line_h / 2 - fs * 0.3 + y_offset
+    start_y = y0 + h / 2 + (n - 1) * line_h / 2 - fs * 0.3
 
     bold = n > 1 or (n == 1 and len(lines[0]) >= 6)
     c.setFont(font, fs)
@@ -763,14 +759,14 @@ def _draw_split4(c, x0, y0, w, h, company, font: str = "MSPGothic",
         mode  = 2 if bold else 0    # 2 = fill + stroke
 
         if len(line) == 2:
-            # 2文字：前後に全角スペース2.5文字分の余白を確保して均等割付
-            pad = stringWidth("　", font, fs) * 2.5
-            cw  = [stringWidth(ch, font, fs) for ch in line]
-            gap = max(0.0, inner_w - 2 * pad - sum(cw))
-            x   = x0 + P + pad
+            # 2文字：左右端に寄せず、文字間に全角スペース1文字分の間隔を空けて中央配置
+            cw      = [stringWidth(ch, font, fs) for ch in line]
+            sp      = stringWidth("　", font, fs)
+            block_w = cw[0] + sp + cw[1]
+            x       = x0 + P + (inner_w - block_w) / 2
             for j, ch in enumerate(line):
                 c.drawString(x, cur_y, ch, mode=mode)
-                x += cw[j] + (gap if j == 0 else 0)
+                x += cw[j] + sp
         else:
             nchars = len(line)
             line_w = stringWidth(line, font, fs)
