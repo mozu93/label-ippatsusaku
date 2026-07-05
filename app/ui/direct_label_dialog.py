@@ -55,18 +55,20 @@ class DirectLabelDialog(QDialog):
       6列: 企業名, 郵便番号, 住所1, 住所2, 肩書, 氏名
     """
 
-    COL_CHK     = 0
-    COL_COMPANY = 1
-    COL_KANA    = 2
-    COL_TITLE   = 3
-    COL_PERSON  = 4
-    COL_POSTAL  = 5
-    COL_ADDR    = 6
-    COL_BC_ADDR = 7
+    COL_CHK      = 0
+    COL_COMPANY  = 1
+    COL_COMPANY2 = 2
+    COL_KANA     = 3
+    COL_TITLE    = 4
+    COL_PERSON   = 5
+    COL_POSTAL   = 6
+    COL_ADDR1    = 7
+    COL_ADDR2    = 8
+    COL_BC_ADDR  = 9
 
     _REQUIRED_COLS: dict[str, set] = {
-        "normal":    {COL_COMPANY, COL_PERSON, COL_ADDR},
-        "no_person": {COL_COMPANY, COL_ADDR},
+        "normal":    {COL_COMPANY, COL_PERSON, COL_ADDR1},
+        "no_person": {COL_COMPANY, COL_ADDR1},
         "simple":    {COL_COMPANY},
         "nametag":   {COL_COMPANY, COL_PERSON},
         "split4":    {COL_COMPANY},
@@ -74,12 +76,14 @@ class DirectLabelDialog(QDialog):
 
     _COLS = [
         ("",              32,  QHeaderView.ResizeMode.Fixed),
-        ("事業所名",      200, QHeaderView.ResizeMode.Stretch),
+        ("事業所名",      170, QHeaderView.ResizeMode.Stretch),
+        ("事業所名2",     130, QHeaderView.ResizeMode.Interactive),
         ("フリガナ",      130, QHeaderView.ResizeMode.Interactive),
         ("所属・役職名",  130, QHeaderView.ResizeMode.Interactive),
         ("氏名",          120, QHeaderView.ResizeMode.Interactive),
         ("郵便番号",       90, QHeaderView.ResizeMode.Fixed),
-        ("住所",          250, QHeaderView.ResizeMode.Stretch),
+        ("住所1",         180, QHeaderView.ResizeMode.Stretch),
+        ("住所2",         130, QHeaderView.ResizeMode.Interactive),
         ("住所表示番号",  130, QHeaderView.ResizeMode.Fixed),
     ]
 
@@ -537,7 +541,7 @@ class DirectLabelDialog(QDialog):
             item_bc = self.table.item(row, self.COL_BC_ADDR)
             if item_bc and item_bc.text().strip():
                 continue
-            addr = (self.table.item(row, self.COL_ADDR) or QTableWidgetItem()).text()
+            addr = (self.table.item(row, self.COL_ADDR1) or QTableWidgetItem()).text()
             code, confident = extract_address_code(addr)
             self._set_barcode_addr_item(row, code, warn=not confident)
         self.table.blockSignals(False)
@@ -670,7 +674,7 @@ class DirectLabelDialog(QDialog):
         targets = [
             row for row in range(self.table.rowCount())
             if not (self.table.item(row, self.COL_POSTAL) or QTableWidgetItem()).text().strip()
-            and (self.table.item(row, self.COL_ADDR) or QTableWidgetItem()).text().strip()
+            and (self.table.item(row, self.COL_ADDR1) or QTableWidgetItem()).text().strip()
         ]
         if not targets:
             QMessageBox.information(self, "郵便番号補完",
@@ -681,7 +685,7 @@ class DirectLabelDialog(QDialog):
         self._btn_export.setEnabled(False)
         filled = skipped = 0
         for row in targets:
-            address = (self.table.item(row, self.COL_ADDR) or QTableWidgetItem()).text().strip()
+            address = (self.table.item(row, self.COL_ADDR1) or QTableWidgetItem()).text().strip()
             QApplication.processEvents()
             zipcode = lookup_postal_code(address)
             if zipcode:
@@ -854,9 +858,9 @@ class DirectLabelDialog(QDialog):
     _HIDDEN_COLS: dict[str, set] = {
         "normal":    set(),
         "no_person": {COL_TITLE, COL_PERSON},
-        "simple":    {COL_TITLE, COL_PERSON, COL_POSTAL, COL_ADDR},
-        "nametag":   {COL_POSTAL, COL_ADDR},
-        "split4":    {COL_TITLE, COL_PERSON, COL_POSTAL, COL_ADDR},
+        "simple":    {COL_TITLE, COL_PERSON, COL_POSTAL, COL_ADDR1, COL_ADDR2},
+        "nametag":   {COL_POSTAL, COL_ADDR1, COL_ADDR2},
+        "split4":    {COL_TITLE, COL_PERSON, COL_POSTAL, COL_ADDR1, COL_ADDR2},
     }
 
     def _on_mode_toggled(self, checked: bool):
@@ -1079,7 +1083,7 @@ class DirectLabelDialog(QDialog):
                 "title":           _cell(self.COL_TITLE),
                 "person_name":     _cell(self.COL_PERSON),
                 "postal_code":     _cell(self.COL_POSTAL),
-                "address1":        _cell(self.COL_ADDR),
+                "address1":        _cell(self.COL_ADDR1),
                 "address2":        "",
                 "barcode_address": _cell(self.COL_BC_ADDR),
                 "entry_mode":      "inherit",
@@ -1238,7 +1242,7 @@ class DirectLabelDialog(QDialog):
                 "company_name":    _cell(self.COL_COMPANY),
                 "company_kana":    _cell(self.COL_KANA),
                 "postal_code":     _cell(self.COL_POSTAL),
-                "address1":        _cell(self.COL_ADDR),
+                "address1":        _cell(self.COL_ADDR1),
                 "address2":        "",
                 "title":           _cell(self.COL_TITLE),
                 "person_name":     _cell(self.COL_PERSON),
