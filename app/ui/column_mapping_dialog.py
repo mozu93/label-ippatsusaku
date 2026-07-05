@@ -14,7 +14,8 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from app.utils.label_import import (
-    _normalize, _DIR_COMPANY, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_TITLE, _DIR_PERSON,
+    _normalize, _DIR_COMPANY, _DIR_COMPANY2, _DIR_KANA, _DIR_POSTAL,
+    _DIR_ADDR1, _DIR_ADDR2, _DIR_TITLE, _DIR_PERSON,
     _FALLBACK_COLS,
 )
 
@@ -23,12 +24,14 @@ class ColumnMappingDialog(QDialog):
     """貼り付けデータの列を各フィールドに対応付けるダイアログ"""
 
     _FIELDS = [
-        ("company_name", "事業所名"),
-        ("company_kana", "フリガナ（読み）"),
-        ("title",        "所属・役職名"),
-        ("person_name",  "氏名"),
-        ("postal_code",  "郵便番号"),
-        ("address1",     "住所"),
+        ("company_name",  "事業所名"),
+        ("company_name2", "事業所名2"),
+        ("company_kana",  "フリガナ（読み）"),
+        ("title",         "所属・役職名"),
+        ("person_name",   "氏名"),
+        ("postal_code",   "郵便番号"),
+        ("address1",      "住所1"),
+        ("address2",      "住所2"),
     ]
 
     _REQUIRED_BY_MODE: dict[str, set] = {
@@ -40,9 +43,11 @@ class ColumnMappingDialog(QDialog):
     }
 
     _FIELD_HINTS: dict[str, str] = {
-        "company_kana": "任意・自動入力可",
-        "title":        "任意",
-        "postal_code":  "任意・自動入力可",
+        "company_name2": "任意",
+        "company_kana":  "任意・自動入力可",
+        "title":         "任意",
+        "postal_code":   "任意・自動入力可",
+        "address2":      "任意",
     }
 
     def __init__(self, headers: list[str], preview_rows: list[list[str]],
@@ -121,12 +126,14 @@ class ColumnMappingDialog(QDialog):
     def _auto_detect(self) -> None:
         """ヘッダー名からフィールドを自動マッピングする"""
         field_keys = {
-            "company_name": _DIR_COMPANY,
-            "company_kana": _DIR_KANA,
-            "postal_code":  _DIR_POSTAL,
-            "address1":     _DIR_ADDR1,
-            "title":        _DIR_TITLE,
-            "person_name":  _DIR_PERSON,
+            "company_name":  _DIR_COMPANY,
+            "company_name2": _DIR_COMPANY2,
+            "company_kana":  _DIR_KANA,
+            "postal_code":   _DIR_POSTAL,
+            "address1":      _DIR_ADDR1,
+            "address2":      _DIR_ADDR2,
+            "title":         _DIR_TITLE,
+            "person_name":   _DIR_PERSON,
         }
         used: set[int] = set()
         matched = 0
