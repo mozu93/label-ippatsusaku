@@ -254,3 +254,82 @@ def test_draw_label_tolerates_missing_company_name2_attribute():
     # getattr(entry, "company_name2", "") が正しく "" を返すことで、
     # 例外が発生しない
     svc._draw_label(c, entry, x0=0.0, y0=0.0, w=200.0, h=100.0, mode="normal")
+
+
+def test_layout_person_line_short_name_fits_one_line():
+    lines, fs = svc._layout_person_line("山田太郎", "MSPGothic", 11.0, 80 * mm)
+    assert lines == ["山田太郎　様"]
+    assert fs == pytest.approx(11.0)
+
+
+def test_layout_person_line_existing_honorific_not_duplicated():
+    lines, fs = svc._layout_person_line("山田太郎様", "MSPGothic", 11.0, 80 * mm)
+    assert lines == ["山田太郎様"]
+
+
+def test_layout_person_line_existing_honorific_with_whitespace():
+    lines, fs = svc._layout_person_line("山田太郎様  ", "MSPGothic", 11.0, 80 * mm)
+    assert lines == ["山田太郎様"]
+
+
+def test_layout_person_line_long_text_wraps_to_two_lines():
+    long_name = "代表取締役社長　山田太郎様"
+    lines, fs = svc._layout_person_line(long_name, "MSPGothic", 11.0, 25 * mm)
+    assert len(lines) == 2
+    assert "".join(lines) == long_name
+    assert fs <= 9.0
+
+
+def test_layout_person_line_two_lines_fit_within_avail_width():
+    long_name = "代表取締役社長　山田太郎様"
+    avail_w = 25 * mm
+    lines, fs = svc._layout_person_line(long_name, "MSPGothic", 11.0, avail_w)
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    for line in lines:
+        assert stringWidth(line, "MSPGothic", fs) <= avail_w + 0.01
+
+
+def test_draw_normal_wraps_long_person_name_into_two_drawstring_calls():
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    c = Canvas(BytesIO())
+    drawn = []
+    orig_draw_string = c.drawString
+    def _spy(x, y, text, **kw):
+        drawn.append((x, y, text))
+        return orig_draw_string(x, y, text, **kw)
+    c.drawString = _spy
+
+    long_name = "特別顧問兼代表取締役社長最高経営責任者　山田太郎様"
+    svc._draw_normal(c, x0=0, y0=0, w=70 * mm, h=42.3 * mm,
+                      company="", postal="", addr1="", addr2="",
+                      title="", person=long_name, font="MSPGothic")
+
+    # company/postal/addr1/addr2/title が全て空のため、drawString 呼び出しは
+    # 氏名ブロックの分だけになる（1行なら1件、2行なら2件）
+    assert len(drawn) == 2
+    ys = {round(y, 1) for _, y, _ in drawn}
+    assert len(ys) == 2
+    top, bottom = sorted(drawn, key=lambda d: -d[1])
+    assert top[2] + bottom[2] == long_name
+
+
+def test_draw_normal_short_person_name_single_drawstring_call():
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    c = Canvas(BytesIO())
+    drawn = []
+    orig_draw_string = c.drawString
+    def _spy(x, y, text, **kw):
+        drawn.append((x, y, text))
+        return orig_draw_string(x, y, text, **kw)
+    c.drawString = _spy
+
+    svc._draw_normal(c, x0=0, y0=0, w=70 * mm, h=42.3 * mm,
+                      company="", postal="", addr1="", addr2="",
+                      title="", person="山田太郎", font="MSPGothic")
+
+    assert len(drawn) == 1
+    assert drawn[0][2] == "山田太郎　様"

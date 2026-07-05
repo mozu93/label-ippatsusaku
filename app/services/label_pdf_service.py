@@ -347,6 +347,33 @@ def _draw_label(c, entry, x0: float, y0: float, w: float, h: float, mode: str,
     c.restoreState()
 
 
+def _layout_person_line(person: str, font: str, max_fs: float, avail_w: float,
+                         wrap_fs: float = 9.0, min_fs: float = 7.0) -> tuple[list[str], float]:
+    """
+    氏名テキストのレイアウトを決定する（描画は行わない）。
+
+    戻り値: (行のリスト（1行 or 最大2行）, フォントサイズ)
+    敬称「様」が末尾に既にあれば追加しない（役職名＋氏名＋敬称が
+    1セルに結合された業務データを想定）。avail_w に1行で収まらない
+    場合は wrap_fs で2行に折り返し、それでも収まらなければ min_fs まで
+    0.5pt刻みで縮小する。
+    """
+    person_stripped = person.strip()
+    suffix = "" if person_stripped.endswith("様") else "　様"
+    name_line = person_stripped + suffix
+
+    if stringWidth(name_line, font, wrap_fs) <= avail_w:
+        fs = _fit_text(name_line, font, max_fs, avail_w, min_size=wrap_fs)
+        return [name_line], fs
+
+    fs = wrap_fs
+    line1, line2 = _split_line(name_line, font, fs, avail_w)
+    while line2 and stringWidth(line2, font, fs) > avail_w and fs > min_fs:
+        fs -= 0.5
+        line1, line2 = _split_line(name_line, font, fs, avail_w)
+    return [line1, line2], fs
+
+
 # ── 通常モード ──────────────────────────────────────────────────────────
 
 def _draw_normal(c, x0, y0, w, h,
@@ -453,12 +480,19 @@ def _draw_normal(c, x0, y0, w, h,
 
     # ── 氏名 + 様（役職あり: 少し余白、役職なし: 詰めて配置）──────────
     if person:
-        name_line = f"{person}　様"
-        name_fs   = _fit_text(name_line, font, name_max_fs, inner_w - (indent2 - P))
-        name_y    = max(y0 + P * 0.8, cur_y)
+        name_avail = inner_w - (indent2 - P)
+        lines, name_fs = _layout_person_line(person, font, name_max_fs, name_avail)
         c.setFont(font, name_fs)
         c.setFillColor(black)
-        c.drawString(x0 + indent2, name_y, name_line)
+        if len(lines) == 1:
+            name_y = max(y0 + P * 0.8, cur_y)
+            c.drawString(x0 + indent2, name_y, lines[0])
+        else:
+            line_h_name = name_fs * 1.15
+            y_line2 = max(y0 + P * 0.8, cur_y - line_h_name)
+            y_line1 = y_line2 + line_h_name
+            c.drawString(x0 + indent2, y_line1, lines[0])
+            c.drawString(x0 + indent2, y_line2, lines[1])
     else:
         gochu_fs = max(7.0, 10.0 * scale)
         name_y   = max(y0 + P * 0.8, cur_y)
