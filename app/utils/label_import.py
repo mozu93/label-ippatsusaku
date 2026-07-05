@@ -268,7 +268,7 @@ def parse_raw_clipboard(text: str) -> tuple[list[str], list[list[str]]]:
 
     first_cols = all_rows[0]
     all_known = {_normalize(k)
-                 for ks in (_DIR_COMPANY, _DIR_COMPANY2, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
+                 for ks in (_DIR_COMPANY, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
                              _DIR_TITLE, _DIR_PERSON)
                  for k in ks}
     has_header = any(_normalize(c) in all_known for c in first_cols)
@@ -297,7 +297,7 @@ def parse_direct_clipboard(text: str) -> list[DirectRow]:
 
     first_cols = [c.strip() for c in lines[0].split("\t")]
     all_known  = {_normalize(k)
-                  for ks in (_DIR_COMPANY, _DIR_COMPANY2, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
+                  for ks in (_DIR_COMPANY, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
                               _DIR_TITLE, _DIR_PERSON)
                   for k in ks}
     has_header = any(_normalize(c) in all_known for c in first_cols)
