@@ -13,8 +13,9 @@ from app.services import label_pdf_service as svc
 
 class _FakeEntry:
     """generate_label_pdf が参照する属性のみを持つ簡易エントリ"""
-    def __init__(self, company_name="テスト株式会社", entry_mode="split4"):
+    def __init__(self, company_name="テスト株式会社", entry_mode="split4", company_name2=""):
         self.company_name    = company_name
+        self.company_name2   = company_name2
         self.postal_code     = ""
         self.address1        = ""
         self.address2        = ""
@@ -185,3 +186,46 @@ def test_generate_label_pdf_offset_shifts_rendered_text(tmp_path):
 
     assert x1 - x0 == pytest.approx(5.0 * mm, abs=0.5)
     assert y1 - y0 == pytest.approx(-3.0 * mm, abs=0.5)
+
+
+def test_draw_label_combines_company_name_and_name2():
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    captured = {}
+
+    def fake_draw_normal(c, x0, y0, w, h, company, *args, **kwargs):
+        captured["company"] = company
+
+    orig = svc._draw_normal
+    svc._draw_normal = fake_draw_normal
+    try:
+        c = Canvas(BytesIO())
+        entry = _FakeEntry(company_name="株式会社テスト", entry_mode="normal",
+                           company_name2="○○支店")
+        svc._draw_label(c, entry, x0=0.0, y0=0.0, w=200.0, h=100.0, mode="normal")
+    finally:
+        svc._draw_normal = orig
+
+    assert captured["company"] == "株式会社テスト\n○○支店"
+
+
+def test_draw_label_company_name2_empty_does_not_add_newline():
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    captured = {}
+
+    def fake_draw_normal(c, x0, y0, w, h, company, *args, **kwargs):
+        captured["company"] = company
+
+    orig = svc._draw_normal
+    svc._draw_normal = fake_draw_normal
+    try:
+        c = Canvas(BytesIO())
+        entry = _FakeEntry(company_name="株式会社テスト", entry_mode="normal")
+        svc._draw_label(c, entry, x0=0.0, y0=0.0, w=200.0, h=100.0, mode="normal")
+    finally:
+        svc._draw_normal = orig
+
+    assert captured["company"] == "株式会社テスト"

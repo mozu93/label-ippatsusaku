@@ -321,6 +321,9 @@ def _draw_label(c, entry, x0: float, y0: float, w: float, h: float, mode: str,
         hs = h  - 2 * _SAFETY_V
 
     company      = entry.company_name or ""
+    company2     = getattr(entry, "company_name2", "") or ""
+    if company2:
+        company = f"{company}\n{company2}" if company else company2
     postal       = entry.postal_code  or ""
     addr1        = entry.address1     or ""
     addr2        = entry.address2     or ""
