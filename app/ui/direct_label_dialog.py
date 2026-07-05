@@ -765,16 +765,15 @@ class DirectLabelDialog(QDialog):
         self.table.setRowCount(0)
         self._last_chk_row = None
         for e in entries:
-            addr = e.address1 or ""
-            if e.address2:
-                addr = addr + (" " if addr else "") + e.address2
             self._add_row([
                 e.company_name    or "",
+                getattr(e, "company_name2", "") or "",
                 e.company_kana    or "",
                 e.title           or "",
                 e.person_name     or "",
                 e.postal_code     or "",
-                addr,
+                e.address1        or "",
+                e.address2        or "",
                 e.barcode_address or "",
             ])
         self._loading_batch = False
@@ -1079,12 +1078,13 @@ class DirectLabelDialog(QDialog):
                 return item.text().strip() if item else ""
             entries.append(type("_E", (), {
                 "company_name":    _cell(self.COL_COMPANY),
+                "company_name2":   _cell(self.COL_COMPANY2),
                 "company_kana":    _cell(self.COL_KANA),
                 "title":           _cell(self.COL_TITLE),
                 "person_name":     _cell(self.COL_PERSON),
                 "postal_code":     _cell(self.COL_POSTAL),
                 "address1":        _cell(self.COL_ADDR1),
-                "address2":        "",
+                "address2":        _cell(self.COL_ADDR2),
                 "barcode_address": _cell(self.COL_BC_ADDR),
                 "entry_mode":      "inherit",
             })())
@@ -1129,11 +1129,13 @@ class DirectLabelDialog(QDialog):
         for dr in direct_rows:
             self._add_row([
                 dr.company_name,
+                dr.company_name2,
                 dr.company_kana,
                 dr.title,
                 dr.person_name,
                 dr.postal_code,
-                dr.address1 + (" " + dr.address2 if dr.address2 else ""),
+                dr.address1,
+                dr.address2,
             ])
         QMessageBox.information(self, "取込完了", f"{len(direct_rows)} 件を取り込みました。")
 
@@ -1154,9 +1156,11 @@ class DirectLabelDialog(QDialog):
                 return _row[idx] if idx is not None and idx < len(_row) else ""
             dr = DirectRow(
                 company_name=_get("company_name"),
+                company_name2=_get("company_name2"),
                 company_kana=_get("company_kana"),
                 postal_code =_get("postal_code"),
                 address1    =_get("address1"),
+                address2    =_get("address2"),
                 title       =_get("title"),
                 person_name =_get("person_name"),
             )
@@ -1240,10 +1244,11 @@ class DirectLabelDialog(QDialog):
                 "sort_order":      row,
                 "client_id":       None,
                 "company_name":    _cell(self.COL_COMPANY),
+                "company_name2":   _cell(self.COL_COMPANY2),
                 "company_kana":    _cell(self.COL_KANA),
                 "postal_code":     _cell(self.COL_POSTAL),
                 "address1":        _cell(self.COL_ADDR1),
-                "address2":        "",
+                "address2":        _cell(self.COL_ADDR2),
                 "title":           _cell(self.COL_TITLE),
                 "person_name":     _cell(self.COL_PERSON),
                 "barcode_address": _cell(self.COL_BC_ADDR),
