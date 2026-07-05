@@ -48,6 +48,7 @@ class LabelEntry(Base):
     sort_order      = Column(Integer, default=0)
     client_id       = Column(Integer, nullable=True)
     company_name    = Column(String(200), default="")
+    company_name2   = Column(String(200), default="")
     company_kana    = Column(String(200), default="")
     postal_code     = Column(String(10), default="")
     address1        = Column(String(200), default="")
@@ -79,6 +80,9 @@ def init_db():
         cols = [c["name"] for c in sa_inspect(engine).get_columns("label_entries")]
         if "company_kana" not in cols:
             conn.execute(text("ALTER TABLE label_entries ADD COLUMN company_kana VARCHAR(200) DEFAULT ''"))
+            conn.commit()
+        if "company_name2" not in cols:
+            conn.execute(text("ALTER TABLE label_entries ADD COLUMN company_name2 VARCHAR(200) DEFAULT ''"))
             conn.commit()
         if "barcode_address" not in cols:
             conn.execute(text("ALTER TABLE label_entries ADD COLUMN barcode_address VARCHAR(100) DEFAULT ''"))

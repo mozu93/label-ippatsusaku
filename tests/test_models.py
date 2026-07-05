@@ -30,6 +30,7 @@ def test_create_entry(session):
         sort_order=0,
         client_id=None,
         company_name="株式会社テスト",
+        company_name2="",
         postal_code="100-0001",
         address1="東京都千代田区",
         address2="",
@@ -40,6 +41,7 @@ def test_create_entry(session):
     session.commit()
     assert entry.id is not None
     assert entry.client_id is None
+    assert entry.company_name2 == ""
 
 def test_cascade_delete(session):
     batch = LabelBatch(batch_name="削除テスト", label_mode="normal")
@@ -52,3 +54,17 @@ def test_cascade_delete(session):
     session.delete(batch)
     session.commit()
     assert session.query(LabelEntry).count() == 0
+
+def test_create_entry_with_company_name2(session):
+    batch = LabelBatch(batch_name="テスト2", label_mode="normal")
+    session.add(batch)
+    session.flush()
+    entry = LabelEntry(
+        batch_id=batch.id,
+        sort_order=0,
+        company_name="株式会社テスト",
+        company_name2="○○支店",
+    )
+    session.add(entry)
+    session.commit()
+    assert entry.company_name2 == "○○支店"
