@@ -22,6 +22,7 @@ from typing import Optional
 class DirectRow:
     """直接貼り付けモード用：住所を含むすべての情報を自前で持つ"""
     company_name: str = ""
+    company_name2: str = ""
     company_kana: str = ""
     postal_code:  str = ""
     address1:     str = ""
@@ -191,6 +192,7 @@ def parse_csv_bytes(data: bytes) -> list[ImportRow]:
 
 # 直接入力の列名マッピング
 _DIR_COMPANY  = {"企業名", "会社名", "事業所名", "company"}
+_DIR_COMPANY2 = {"事業所名2", "会社名2", "company2"}
 _DIR_KANA     = {"フリガナ", "読み", "よみ", "ふりがな", "kana"}
 _DIR_POSTAL   = {"郵便番号", "postal", "zip"}
 _DIR_ADDR1    = {"住所", "住所1", "address", "address1"}
@@ -222,6 +224,7 @@ def _extract_direct_row(row_dict: dict) -> DirectRow:
 
     return DirectRow(
         company_name=_pick(_DIR_COMPANY),
+        company_name2=_pick(_DIR_COMPANY2),
         company_kana=_pick(_DIR_KANA),
         postal_code =_pick(_DIR_POSTAL),
         address1    =_pick(_DIR_ADDR1),
@@ -237,6 +240,7 @@ def _cols_to_direct_row(cols: list[str], field_order: list[str]) -> DirectRow:
                for i in range(len(field_order))}
     return DirectRow(
         company_name=mapping.get("company_name", ""),
+        company_name2=mapping.get("company_name2", ""),
         company_kana=mapping.get("company_kana", ""),
         postal_code =mapping.get("postal_code",  ""),
         address1    =mapping.get("address1",      ""),
@@ -264,7 +268,7 @@ def parse_raw_clipboard(text: str) -> tuple[list[str], list[list[str]]]:
 
     first_cols = all_rows[0]
     all_known = {_normalize(k)
-                 for ks in (_DIR_COMPANY, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
+                 for ks in (_DIR_COMPANY, _DIR_COMPANY2, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
                              _DIR_TITLE, _DIR_PERSON)
                  for k in ks}
     has_header = any(_normalize(c) in all_known for c in first_cols)
@@ -293,7 +297,7 @@ def parse_direct_clipboard(text: str) -> list[DirectRow]:
 
     first_cols = [c.strip() for c in lines[0].split("\t")]
     all_known  = {_normalize(k)
-                  for ks in (_DIR_COMPANY, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
+                  for ks in (_DIR_COMPANY, _DIR_COMPANY2, _DIR_KANA, _DIR_POSTAL, _DIR_ADDR1, _DIR_ADDR2,
                               _DIR_TITLE, _DIR_PERSON)
                   for k in ks}
     has_header = any(_normalize(c) in all_known for c in first_cols)
