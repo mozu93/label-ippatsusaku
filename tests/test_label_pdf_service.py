@@ -229,3 +229,28 @@ def test_draw_label_company_name2_empty_does_not_add_newline():
         svc._draw_normal = orig
 
     assert captured["company"] == "株式会社テスト"
+
+
+def test_draw_label_tolerates_missing_company_name2_attribute():
+    """company_name2属性がないエントリでもgetattr()で安全に処理できることを確認"""
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    # company_name2属性を持たないミニマルなエントリオブジェクト
+    NoCompany2Entry = type("_NoCompany2Entry", (), {
+        "company_name": "株式会社テスト",
+        "postal_code": "",
+        "address1": "",
+        "address2": "",
+        "title": "",
+        "person_name": "",
+        "entry_mode": "normal",
+        "barcode_address": "",
+    })
+    entry = NoCompany2Entry()
+
+    # _draw_label がAttributeErrorを発生させず、正常に動作することを確認
+    c = Canvas(BytesIO())
+    # getattr(entry, "company_name2", "") が正しく "" を返すことで、
+    # 例外が発生しない
+    svc._draw_label(c, entry, x0=0.0, y0=0.0, w=200.0, h=100.0, mode="normal")
