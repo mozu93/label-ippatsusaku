@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QButtonGroup,
     QTableWidgetItem, QHeaderView,
     QMessageBox, QFileDialog,
-    QComboBox, QLineEdit,
+    QComboBox, QLineEdit, QSpinBox,
     QApplication,
     QCheckBox, QWidget, QFrame, QMenu,
 )
@@ -421,6 +421,17 @@ class DirectLabelDialog(QDialog):
         if idx >= 0:
             self._layout_combo.setCurrentIndex(idx)
 
+        self._start_slot_lbl = _lbl("開始位置:")
+        self._start_slot_spin = QSpinBox()
+        self._start_slot_spin.setFixedHeight(34)
+        self._start_slot_spin.setMinimum(1)
+        self._start_slot_spin.setToolTip(
+            "印刷を開始する面番号（1 = 1面目・左上）。\n"
+            "使いかけのラベルシートの空いている面から印刷したいときに変更します。"
+        )
+        self._layout_combo.currentIndexChanged.connect(self._on_layout_changed)
+        self._on_layout_changed()
+
         self._font_combo = QComboBox()
         self._font_combo.setFixedHeight(34)
         for key in FONT_OPTIONS:
@@ -455,6 +466,9 @@ class DirectLabelDialog(QDialog):
         foot.addWidget(_lbl("用紙:"))
         foot.addWidget(self._layout_combo)
         foot.addSpacing(8)
+        foot.addWidget(self._start_slot_lbl)
+        foot.addWidget(self._start_slot_spin)
+        foot.addSpacing(8)
         foot.addWidget(_lbl("フォント:"))
         foot.addWidget(self._font_combo)
         foot.addSpacing(8)
@@ -463,6 +477,19 @@ class DirectLabelDialog(QDialog):
         foot.addWidget(self._btn_preview)
         foot.addWidget(self._btn_export)
         return foot
+
+    def _on_layout_changed(self) -> None:
+        """用紙切替時に開始位置スピンボックスの範囲・表示を更新する"""
+        layout_key = self._layout_combo.currentData() or DEFAULT_LAYOUT_KEY
+        layout = LABEL_LAYOUTS.get(layout_key) or LABEL_LAYOUTS[DEFAULT_LAYOUT_KEY]
+        is_plate = layout_key == "a4_4split"
+        self._start_slot_lbl.setVisible(not is_plate)
+        self._start_slot_spin.setVisible(not is_plate)
+        if not is_plate:
+            per_page = layout.cols * layout.rows
+            self._start_slot_spin.setMaximum(per_page)
+            if self._start_slot_spin.value() > per_page:
+                self._start_slot_spin.setValue(per_page)
 
     # ── ステップインジケーター ───────────────────────────────────────
 
@@ -1069,6 +1096,7 @@ class DirectLabelDialog(QDialog):
         offset_h, offset_v = (
             (0.0, 0.0) if layout_key == "a4_4split" else get_label_offset(layout_key)
         )
+        start_slot = 0 if layout_key == "a4_4split" else self._start_slot_spin.value() - 1
 
         # テーブルの選択行を LabelEntry 互換の軽量オブジェクトに変換
         entries = []
@@ -1093,7 +1121,8 @@ class DirectLabelDialog(QDialog):
         try:
             generate_label_pdf(entries, buf, mode, layout_key, font_key,
                                barcode_enabled=self._chk_barcode.isChecked(),
-                               offset_h_mm=offset_h, offset_v_mm=offset_v)
+                               offset_h_mm=offset_h, offset_v_mm=offset_v,
+                               start_slot=start_slot)
         except Exception as ex:
             QMessageBox.critical(self, "プレビューエラー",
                                  f"PDF の生成に失敗しました：\n{ex}")
@@ -1308,10 +1337,12 @@ class DirectLabelDialog(QDialog):
         offset_h, offset_v = (
             (0.0, 0.0) if layout_key == "a4_4split" else get_label_offset(layout_key)
         )
+        start_slot = 0 if layout_key == "a4_4split" else self._start_slot_spin.value() - 1
         try:
             generate_label_pdf(orm_entries, os.path.normpath(pdf_path), mode, layout_key, font_key,
                                barcode_enabled=self._chk_barcode.isChecked(),
-                               offset_h_mm=offset_h, offset_v_mm=offset_v)
+                               offset_h_mm=offset_h, offset_v_mm=offset_v,
+                               start_slot=start_slot)
         except Exception as ex:
             QMessageBox.critical(self, "PDF 出力エラー", f"PDF の生成に失敗しました：\n{ex}")
             return
