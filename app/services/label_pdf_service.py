@@ -199,6 +199,7 @@ def generate_label_pdf(
     barcode_enabled: bool  = False,
     offset_h_mm:     float = 0.0,
     offset_v_mm:     float = 0.0,
+    start_slot:      int   = 0,
 ) -> str:
     """
     entries     : LabelEntry ORM オブジェクトのリスト
@@ -206,11 +207,18 @@ def generate_label_pdf(
     batch_mode  : バッチのデフォルトモード ("normal" | "simple")
     layout_key  : LABEL_LAYOUTS のキー
     font_key    : FONT_OPTIONS のキー
+    start_slot  : 印刷を開始するスロット番号（0始まり、0 = 1面目）。
+                  layout_key == "a4_4split" の場合は常に0として扱う。
     """
     layout = LABEL_LAYOUTS.get(layout_key) or LABEL_LAYOUTS[DEFAULT_LAYOUT_KEY]
     font   = FONT_OPTIONS.get(font_key, FONT_OPTIONS[DEFAULT_FONT_KEY])
     lw, lh = _label_wh(layout)
     per_page = layout.cols * layout.rows
+
+    if layout_key == "a4_4split":
+        start_slot = 0
+    else:
+        start_slot = max(0, min(start_slot, per_page - 1))
 
     if isinstance(output_path, str):
         parent = os.path.dirname(output_path)
@@ -233,7 +241,7 @@ def generate_label_pdf(
         if layout_key == "a4_4split" else list(entries)
     )
 
-    slot = 0
+    slot = start_slot
     for entry in draw_entries:
         # ページ送り
         if slot > 0 and slot % per_page == 0:

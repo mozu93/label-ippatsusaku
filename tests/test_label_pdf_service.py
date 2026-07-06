@@ -333,3 +333,135 @@ def test_draw_normal_short_person_name_single_drawstring_call():
 
     assert len(drawn) == 1
     assert drawn[0][2] == "山田太郎　様"
+
+
+def test_generate_label_pdf_start_slot_shifts_first_entry_origin():
+    """start_slot を指定すると、最初のエントリがそのスロットの座標に描画される"""
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    captured = []
+
+    def fake_draw_label(c, entry, x0, y0, w, h, mode, font, barcode_enabled=False):
+        captured.append((x0, y0))
+
+    orig = svc._draw_label
+    svc._draw_label = fake_draw_label
+    try:
+        layout = svc.LABEL_LAYOUTS["a_one_28185"]
+        buf = BytesIO()
+        generate_label_pdf([_FakeEntry(entry_mode="normal")], buf,
+                            batch_mode="normal", layout_key="a_one_28185",
+                            start_slot=5)
+    finally:
+        svc._draw_label = orig
+
+    # start_slot=5 (0始まり) → page_slot=5, col=5%3=2, row=5//3=1
+    expected_x0, expected_y0 = svc._label_origin(2, 1, layout)
+    assert captured[0] == pytest.approx((expected_x0, expected_y0))
+
+
+def test_generate_label_pdf_start_slot_default_is_first_slot():
+    """start_slot 省略時は従来通り1面目（col=0, row=0）から描画される"""
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    captured = []
+
+    def fake_draw_label(c, entry, x0, y0, w, h, mode, font, barcode_enabled=False):
+        captured.append((x0, y0))
+
+    orig = svc._draw_label
+    svc._draw_label = fake_draw_label
+    try:
+        layout = svc.LABEL_LAYOUTS["a_one_28185"]
+        buf = BytesIO()
+        generate_label_pdf([_FakeEntry(entry_mode="normal")], buf,
+                            batch_mode="normal", layout_key="a_one_28185")
+    finally:
+        svc._draw_label = orig
+
+    expected_x0, expected_y0 = svc._label_origin(0, 0, layout)
+    assert captured[0] == pytest.approx((expected_x0, expected_y0))
+
+
+def test_generate_label_pdf_start_slot_crosses_page_boundary():
+    """18面用紙で start_slot=17（最終面）から2件出力すると2ページ目に送られる"""
+    out = None
+    import tempfile, os
+    fd, out = tempfile.mkstemp(suffix=".pdf")
+    os.close(fd)
+    try:
+        generate_label_pdf(
+            [_FakeEntry(entry_mode="normal"), _FakeEntry(entry_mode="normal")],
+            out, batch_mode="normal", layout_key="a_one_28185", start_slot=17,
+        )
+        doc = fitz.open(out)
+        assert doc.page_count == 2
+        doc.close()
+    finally:
+        os.remove(out)
+
+
+def test_generate_label_pdf_start_slot_clamped_when_out_of_range():
+    """面数以上・負の値を渡してもクランプされ例外にならない"""
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    captured = []
+
+    def fake_draw_label(c, entry, x0, y0, w, h, mode, font, barcode_enabled=False):
+        captured.append((x0, y0))
+
+    orig = svc._draw_label
+    svc._draw_label = fake_draw_label
+    try:
+        layout = svc.LABEL_LAYOUTS["a_one_28185"]  # per_page = 18
+        buf = BytesIO()
+        generate_label_pdf([_FakeEntry(entry_mode="normal")], buf,
+                            batch_mode="normal", layout_key="a_one_28185",
+                            start_slot=999)
+        # per_page-1 = 17 にクランプ → col=17%3=2, row=17//3=5
+        expected_over = svc._label_origin(2, 5, layout)
+        assert captured[-1] == pytest.approx(expected_over)
+
+        captured.clear()
+        buf2 = BytesIO()
+        generate_label_pdf([_FakeEntry(entry_mode="normal")], buf2,
+                            batch_mode="normal", layout_key="a_one_28185",
+                            start_slot=-3)
+        # 0 にクランプ
+        expected_neg = svc._label_origin(0, 0, layout)
+        assert captured[-1] == pytest.approx(expected_neg)
+    finally:
+        svc._draw_label = orig
+
+
+def test_generate_label_pdf_start_slot_ignored_for_a4_4split():
+    """卓上プレート（a4_4split）は start_slot を無視して常に先頭から出力する
+
+    PDFバイト列にはReportLabが埋め込む生成時刻等が含まれ得るため、
+    バイト比較ではなく実際の描画呼び出し（座標・回転状態）を比較する。
+    """
+    from io import BytesIO
+    from reportlab.pdfgen.canvas import Canvas
+
+    entry = _FakeEntry(company_name="テスト株式会社", entry_mode="split4")
+    captured_runs = []
+
+    def fake_draw_label(c, entry, x0, y0, w, h, mode, font, barcode_enabled=False):
+        captured_runs[-1].append((round(x0, 3), round(y0, 3)))
+
+    orig = svc._draw_label
+    svc._draw_label = fake_draw_label
+    try:
+        captured_runs.append([])
+        generate_label_pdf([entry], BytesIO(), batch_mode="split4", layout_key="a4_4split")
+        captured_runs.append([])
+        generate_label_pdf([entry], BytesIO(), batch_mode="split4", layout_key="a4_4split",
+                            start_slot=5)
+    finally:
+        svc._draw_label = orig
+
+    assert len(captured_runs[0]) > 0
+    assert captured_runs[0] == captured_runs[1]
