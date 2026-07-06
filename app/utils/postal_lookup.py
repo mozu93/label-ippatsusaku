@@ -13,15 +13,28 @@ _API_URL = "https://api.excelapi.org/post/zipcode"
 _HEARTRAILS_URL = "http://geoapi.heartrails.com/api/json"
 _TIMEOUT = 5  # seconds
 
+# 住所 → 郵便番号（またはNone=未特定）のメモリキャッシュ。
+# プロセス生存中のみ有効（永続化しない）。キーは strip() 済み文字列の完全一致。
+_postal_cache: dict[str, str | None] = {}
+
 
 def lookup_postal_code(address: str) -> str | None:
     """
     住所文字列から郵便番号（XXX-XXXX 形式）を返す。
     見つからない・通信失敗の場合は None。
+    同一住所への再問い合わせはキャッシュから返す（未特定=Noneもキャッシュする）。
     """
     addr = address.strip()
     if not addr:
         return None
+    if addr in _postal_cache:
+        return _postal_cache[addr]
+    result = _lookup_postal_code_uncached(addr)
+    _postal_cache[addr] = result
+    return result
+
+
+def _lookup_postal_code_uncached(addr: str) -> str | None:
     params = urllib.parse.urlencode({"address": addr})
     try:
         with urllib.request.urlopen(f"{_API_URL}?{params}", timeout=_TIMEOUT) as resp:
