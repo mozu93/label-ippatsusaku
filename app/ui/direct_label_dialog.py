@@ -61,7 +61,10 @@ class _PostalLookupThread(QThread):
                 remaining = len(self._targets) - i
                 self.finished_all.emit(filled, skipped, remaining)
                 return
-            zipcode = lookup_postal_code(address)
+            try:
+                zipcode = lookup_postal_code(address)
+            except Exception:
+                zipcode = None
             if zipcode:
                 filled += 1
             else:
