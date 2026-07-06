@@ -11,10 +11,10 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView,
     QMessageBox, QFileDialog,
     QComboBox, QLineEdit, QSpinBox,
-    QApplication,
+    QApplication, QProgressDialog,
     QCheckBox, QWidget, QFrame, QMenu,
 )
-from PyQt6.QtCore import Qt, QEvent, QPoint
+from PyQt6.QtCore import Qt, QEvent, QPoint, QThread, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QKeySequence, QShortcut, QAction
 
 from app.database.models import get_session, LabelBatch, LabelEntry
@@ -39,6 +39,35 @@ from app.utils.app_config import (
     get_label_offset,
 )
 
+
+class _PostalLookupThread(QThread):
+    """郵便番号自動補完をバックグラウンドで1件ずつ順番に実行するワーカー"""
+    progress     = pyqtSignal(int, object)   # (row, zipcode_or_None)
+    finished_all = pyqtSignal(int, int, int)  # (filled, skipped, cancelled_remaining)
+
+    def __init__(self, targets: list, parent=None):
+        super().__init__(parent)
+        self._targets = targets   # [(row, address), ...]
+        self._cancel_requested = False
+
+    def request_cancel(self):
+        self._cancel_requested = True
+
+    def run(self):
+        from app.utils.postal_lookup import lookup_postal_code
+        filled = skipped = 0
+        for i, (row, address) in enumerate(self._targets):
+            if self._cancel_requested:
+                remaining = len(self._targets) - i
+                self.finished_all.emit(filled, skipped, remaining)
+                return
+            zipcode = lookup_postal_code(address)
+            if zipcode:
+                filled += 1
+            else:
+                skipped += 1
+            self.progress.emit(row, zipcode)
+        self.finished_all.emit(filled, skipped, 0)
 
 
 class DirectLabelDialog(QDialog):
@@ -280,12 +309,12 @@ class DirectLabelDialog(QDialog):
         btn_clear.clicked.connect(self._clear_all)
 
         # グループC：自動補完
-        btn_postal = _tb("〒 自動補完")
-        btn_postal.setToolTip(
+        self._btn_postal = _tb("〒 自動補完")
+        self._btn_postal.setToolTip(
             "住所が入力されていて郵便番号が空の行に、\n"
             "zipcloud API（インターネット接続必要）で郵便番号を補完します。"
         )
-        btn_postal.clicked.connect(self._fill_postal_codes)
+        self._btn_postal.clicked.connect(self._fill_postal_codes)
 
         btn_kana = _tb("フリガナ補完")
         btn_kana.setToolTip(
@@ -310,7 +339,7 @@ class DirectLabelDialog(QDialog):
             None,       # sep
             btn_add, btn_del, btn_clear,
             None,       # sep
-            btn_postal, btn_kana,
+            self._btn_postal, btn_kana,
             None,       # sep
             self._btn_undo,
         ]:
@@ -695,39 +724,55 @@ class DirectLabelDialog(QDialog):
                 if (c := self._get_row_chk(r)) and c.isChecked()]
 
     def _fill_postal_codes(self):
-        from app.utils.postal_lookup import lookup_postal_code
-        from PyQt6.QtWidgets import QApplication
-
         targets = [
-            row for row in range(self.table.rowCount())
+            (row, (self.table.item(row, self.COL_ADDR1) or QTableWidgetItem()).text().strip())
+            for row in range(self.table.rowCount())
             if not (self.table.item(row, self.COL_POSTAL) or QTableWidgetItem()).text().strip()
             and (self.table.item(row, self.COL_ADDR1) or QTableWidgetItem()).text().strip()
         ]
         if not targets:
             QMessageBox.information(self, "郵便番号補完",
                                     "補完対象の行がありません。\n"
-                                    "（郵便番号が空で住所が入力されている行が対象です）")
+                                    "（郵便番号が空で住所1が入力されている行が対象です）")
             return
 
+        self._btn_postal.setEnabled(False)
         self._btn_export.setEnabled(False)
-        filled = skipped = 0
-        for row in targets:
-            address = (self.table.item(row, self.COL_ADDR1) or QTableWidgetItem()).text().strip()
-            QApplication.processEvents()
-            zipcode = lookup_postal_code(address)
+
+        progress_dlg = QProgressDialog("郵便番号を検索中...", "キャンセル", 0, len(targets), self)
+        progress_dlg.setWindowModality(Qt.WindowModality.WindowModal)
+        progress_dlg.setMinimumDuration(0)
+        progress_dlg.setValue(0)
+
+        self._postal_thread = _PostalLookupThread(targets, self)
+
+        def _on_progress(row, zipcode):
+            count = progress_dlg.value() + 1
+            progress_dlg.setLabelText(f"郵便番号を検索中... ({count}/{len(targets)}件)")
+            progress_dlg.setValue(count)
             if zipcode:
                 item = self.table.item(row, self.COL_POSTAL)
                 if item:
                     item.setText(zipcode)
-                filled += 1
-            else:
-                skipped += 1
 
-        self._btn_export.setEnabled(True)
-        msg = f"{filled} 件の郵便番号を補完しました。"
-        if skipped:
-            msg += f"\n（{skipped} 件は住所から特定できませんでした）"
-        QMessageBox.information(self, "郵便番号補完", msg)
+        def _on_finished(filled, skipped, cancelled_remaining):
+            progress_dlg.close()
+            self._btn_postal.setEnabled(True)
+            self._btn_export.setEnabled(True)
+            if cancelled_remaining > 0:
+                msg = (f"キャンセルしました。{filled} 件の郵便番号を補完しました。\n"
+                       f"（{skipped} 件は住所から特定できませんでした、"
+                       f"{cancelled_remaining} 件は未処理です）")
+            else:
+                msg = f"{filled} 件の郵便番号を補完しました。"
+                if skipped:
+                    msg += f"\n（{skipped} 件は住所から特定できませんでした）"
+            QMessageBox.information(self, "郵便番号補完", msg)
+
+        self._postal_thread.progress.connect(_on_progress)
+        self._postal_thread.finished_all.connect(_on_finished)
+        progress_dlg.canceled.connect(self._postal_thread.request_cancel)
+        self._postal_thread.start()
 
     def _fill_kana(self):
         try:
