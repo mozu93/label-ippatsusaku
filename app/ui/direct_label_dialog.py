@@ -777,6 +777,19 @@ class DirectLabelDialog(QDialog):
         progress_dlg.canceled.connect(self._postal_thread.request_cancel)
         self._postal_thread.start()
 
+    def closeEvent(self, event):
+        """
+        ダイアログを閉じる際、郵便番号自動補完のバックグラウンドスレッドが
+        実行中であれば、キャンセル要求を出して終了を待ってから閉じる。
+        これを行わないと、実行中の QThread が親（本ダイアログ）ごと破棄され、
+        Qt が未定義動作（クラッシュの可能性）を起こすため。
+        """
+        postal_thread = getattr(self, "_postal_thread", None)
+        if postal_thread is not None and postal_thread.isRunning():
+            postal_thread.request_cancel()
+            postal_thread.wait()
+        super().closeEvent(event)
+
     def _fill_kana(self):
         try:
             from app.utils.kana_lookup import get_company_kana

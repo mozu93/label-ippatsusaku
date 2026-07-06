@@ -22,7 +22,11 @@ def lookup_postal_code(address: str) -> str | None:
     """
     住所文字列から郵便番号（XXX-XXXX 形式）を返す。
     見つからない・通信失敗の場合は None。
-    同一住所への再問い合わせはキャッシュから返す（未特定=Noneもキャッシュする）。
+    同一住所への再問い合わせは、成功結果（郵便番号）のみキャッシュから返す。
+    未特定（None）はキャッシュしない。通信失敗（一時的なネットワーク障害等）と
+    住所が本当に見つからない場合を区別できないため、Noneをキャッシュすると
+    一時的な通信失敗がプロセス生存中ずっと「未特定」として固定されてしまう
+    （通信が復旧しても再試行されない）ことを避けるための仕様。
     """
     addr = address.strip()
     if not addr:
@@ -30,7 +34,8 @@ def lookup_postal_code(address: str) -> str | None:
     if addr in _postal_cache:
         return _postal_cache[addr]
     result = _lookup_postal_code_uncached(addr)
-    _postal_cache[addr] = result
+    if result is not None:
+        _postal_cache[addr] = result
     return result
 
 

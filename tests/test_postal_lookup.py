@@ -59,7 +59,7 @@ def test_lookup_postal_code_different_addresses_each_call_api(monkeypatch):
     assert len(calls) == 2
 
 
-def test_lookup_postal_code_not_found_result_is_cached(monkeypatch):
+def test_lookup_postal_code_not_found_result_is_not_cached(monkeypatch):
     calls = []
 
     def fake_urlopen(url, timeout=None):
@@ -73,4 +73,6 @@ def test_lookup_postal_code_not_found_result_is_cached(monkeypatch):
 
     assert r1 is None
     assert r2 is None
-    assert len(calls) == 1
+    # Noneは通信失敗（一時的な障害）と本当に見つからない場合の区別がつかないため
+    # キャッシュしない。よって同一住所を再度検索するとAPIが再度呼ばれる。
+    assert len(calls) == 2
