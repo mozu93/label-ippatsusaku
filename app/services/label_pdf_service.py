@@ -394,6 +394,10 @@ def _draw_normal(c, x0, y0, w, h,
                    → 所属・役職（インデント、複数行）→ 氏名 様（さらにインデント・大きめ）
     ラベルサイズに応じてフォントサイズを自動スケール。
     基準: ラベル高 53mm (generic_2x5) のサイズを 1.0 とする。
+
+    住所が長く自動折り返しの行数が増えても、事業所名・所属・氏名が
+    ラベル下端をはみ出したり氏名と重なったりしないよう、郵便番号〜所属
+    ブロックの行間を必要に応じて圧縮する（comp）。
     """
     # バーコード用下部スペース
     _BC_MARGIN = 1.5 * mm
@@ -416,75 +420,121 @@ def _draw_normal(c, x0, y0, w, h,
     LH = addr_fs * 1.6                           # 行高 = フォントサイズ × 1.6
 
     effective_h = h - bc_reserve
-    cur_y = y0 + effective_h - P - addr_fs * 0.85
+    top_y    = y0 + effective_h - P - addr_fs * 0.85
+    bottom_y = y0 + P * 0.8   # 氏名／御中 が下回らない下限
 
-    # ── 郵便番号 ─────────────────────────────────────────────────────
-    c.setFont(font, addr_fs)
-    c.setFillColor(C_SUB)
-    if postal:
-        c.drawString(x0 + P, cur_y, f"〒{postal}")
-        cur_y -= LH * 0.95
+    def _layout(cv, comp: float) -> float:
+        """郵便番号〜所属ブロックを描画（cv が None のときは計測のみ）し、
+        描画後の cur_y を返す。
 
-    # ── 住所 ─────────────────────────────────────────────────────────
-    if addr1:
-        a = addr1
-        while a:
-            line, a = _split_line(a, font, addr_fs, inner_w)
-            c.drawString(x0 + P, cur_y, line)
-            cur_y -= addr_fs + (LH * 0.95 - addr_fs) * 0.25
-    if addr2:
-        c.drawString(x0 + P, cur_y, addr2)
-        cur_y -= LH * 0.95
+        comp は行間の圧縮率（1.0=通常、0.0=各行の最小ピッチ=フォント
+        サイズ分のみ）。文字がその場で重ならないよう、各行の下降量は
+        「フォントサイズ分（base）＋余白分（comp で圧縮）」に分解して
+        いるため、comp をどこまで下げても行内の文字同士が重なることは
+        ない。
+        """
+        cur_y = top_y
 
-    # 住所と事業所名の間に半行分の空白
-    if postal or addr1 or addr2:
-        cur_y -= LH * 0.2
+        def _sub(raw_dec: float, base: float = 0.0) -> None:
+            nonlocal cur_y
+            cur_y -= base + (raw_dec - base) * comp
 
-    # ── 事業所名（企業名）────────────────────────────────────────────
-    # 10ptで1行に収まれば単行（最大11pt）、収まらなければ\n優先で10pt折り返し
-    if company:
-        co_avail  = inner_w - (indent1 - P)
-        target_fs = 10.0
-        c.setFillColor(black)
-        if "\n" not in company and stringWidth(company, font, target_fs) <= co_avail:
-            fs = _fit_text(company, font, co_max_fs, co_avail, min_size=target_fs)
-            c.setFont(font, fs)
-            c.drawString(x0 + indent1, cur_y, company)
-            cur_y -= LH * 1.26
-        else:
-            c.setFont(font, target_fs)
-            for seg in company.split("\n"):
-                if not seg:
-                    continue
-                rem = seg
-                while rem:
-                    line, rem = _split_line(rem, font, target_fs, co_avail)
-                    c.drawString(x0 + indent1, cur_y, line)
-                    cur_y -= target_fs + (LH * 0.9 - target_fs) * 0.25
-            cur_y -= (target_fs + (LH * 0.9 - target_fs) * 0.25) * 0.2
+        if cv:
+            cv.setFont(font, addr_fs)
+            cv.setFillColor(C_SUB)
+        if postal:
+            if cv:
+                cv.drawString(x0 + P, cur_y, f"〒{postal}")
+            _sub(LH * 0.95, addr_fs)
 
-    # ── 所属・役職（10ptで1行、収まらなければ\n優先で折り返し）──────
-    if title:
-        title_avail = inner_w - (indent1 - P)
-        target_fs   = 10.0
-        c.setFillColor(black)
-        t = title.strip()
-        if "\n" not in t and stringWidth(t, font, target_fs) <= title_avail:
-            fs = _fit_text(t, font, title_fs, title_avail, min_size=target_fs)
-            c.setFont(font, fs)
-            c.drawString(x0 + indent1, cur_y, t)
-            cur_y -= LH * 0.95
-        else:
-            c.setFont(font, target_fs)
-            for seg in t.split("\n"):
-                seg = seg.strip()
-                if not seg:
-                    continue
-                rem = seg
-                while rem:
-                    line, rem = _split_line(rem, font, target_fs, title_avail)
-                    c.drawString(x0 + indent1, cur_y, line)
-                    cur_y -= target_fs + (LH * 0.9 - target_fs) * 0.25
+        # ── 住所 ─────────────────────────────────────────────────────
+        if addr1:
+            a = addr1
+            while a:
+                line, a = _split_line(a, font, addr_fs, inner_w)
+                if cv:
+                    cv.drawString(x0 + P, cur_y, line)
+                _sub(addr_fs + (LH * 0.95 - addr_fs) * 0.25, addr_fs)
+        if addr2:
+            if cv:
+                cv.drawString(x0 + P, cur_y, addr2)
+            _sub(LH * 0.95, addr_fs)
+
+        # 住所と事業所名の間に半行分の空白
+        if postal or addr1 or addr2:
+            _sub(LH * 0.2)
+
+        # ── 事業所名（企業名）────────────────────────────────────────
+        # 10ptで1行に収まれば単行（最大11pt）、収まらなければ\n優先で10pt折り返し
+        if company:
+            co_avail  = inner_w - (indent1 - P)
+            target_fs = 10.0
+            if cv:
+                cv.setFillColor(black)
+            if "\n" not in company and stringWidth(company, font, target_fs) <= co_avail:
+                fs = _fit_text(company, font, co_max_fs, co_avail, min_size=target_fs)
+                if cv:
+                    cv.setFont(font, fs)
+                    cv.drawString(x0 + indent1, cur_y, company)
+                _sub(LH * 1.26, fs)
+            else:
+                if cv:
+                    cv.setFont(font, target_fs)
+                for seg in company.split("\n"):
+                    if not seg:
+                        continue
+                    rem = seg
+                    while rem:
+                        line, rem = _split_line(rem, font, target_fs, co_avail)
+                        if cv:
+                            cv.drawString(x0 + indent1, cur_y, line)
+                        _sub(target_fs + (LH * 0.9 - target_fs) * 0.25, target_fs)
+                _sub((target_fs + (LH * 0.9 - target_fs) * 0.25) * 0.2)
+
+        # ── 所属・役職（10ptで1行、収まらなければ\n優先で折り返し）──
+        if title:
+            title_avail = inner_w - (indent1 - P)
+            target_fs   = 10.0
+            if cv:
+                cv.setFillColor(black)
+            t = title.strip()
+            if "\n" not in t and stringWidth(t, font, target_fs) <= title_avail:
+                fs = _fit_text(t, font, title_fs, title_avail, min_size=target_fs)
+                if cv:
+                    cv.setFont(font, fs)
+                    cv.drawString(x0 + indent1, cur_y, t)
+                _sub(LH * 0.95, fs)
+            else:
+                if cv:
+                    cv.setFont(font, target_fs)
+                for seg in t.split("\n"):
+                    seg = seg.strip()
+                    if not seg:
+                        continue
+                    rem = seg
+                    while rem:
+                        line, rem = _split_line(rem, font, target_fs, title_avail)
+                        if cv:
+                            cv.drawString(x0 + indent1, cur_y, line)
+                        _sub(target_fs + (LH * 0.9 - target_fs) * 0.25, target_fs)
+
+        return cur_y
+
+    # 「圧縮なし(comp=1)」と「最小ピッチ(comp=0)」の高さを計測し、氏名の
+    # 下限に収まるよう比例配分で圧縮率を決める（それでも収まらない場合は
+    # comp=0、すなわち各行を最小ピッチで詰めるところまでで打ち切る）。
+    natural_height    = top_y - _layout(None, 1.0)
+    min_height        = top_y - _layout(None, 0.0)
+    available_height  = top_y - bottom_y
+
+    if natural_height <= available_height:
+        comp = 1.0
+    elif available_height <= min_height:
+        comp = 0.0
+    else:
+        comp = (available_height - min_height) / (natural_height - min_height)
+
+    cur_y = _layout(c, comp)
 
     # ── 氏名 + 様（役職あり: 少し余白、役職なし: 詰めて配置）──────────
     if person:
@@ -528,6 +578,10 @@ def _draw_no_person(c, x0, y0, w, h, company, postal, addr1, addr2,
     宛名ラベル（氏名なし）：事業所名の末尾に半角スペース＋御中を同行出力する。
     手動改行（\\n）を優先し、各セグメントを幅に応じてさらに自動折り返す。
     御中は最終行の末尾に付く。
+
+    住所が長く自動折り返しの行数が増えても事業所名／御中がラベル下端を
+    はみ出さないよう、郵便番号〜住所〜事業所名ブロックの行間を必要に応じて
+    圧縮する（comp）。
     """
     _BC_MARGIN = 1.5 * mm
     _BC_TOP_MARGIN = 1.0 * mm
@@ -545,76 +599,133 @@ def _draw_no_person(c, x0, y0, w, h, company, postal, addr1, addr2,
     LH        = addr_fs * 1.6
 
     effective_h = h - bc_reserve
-    cur_y = y0 + effective_h - P - addr_fs * 0.85
+    top_y    = y0 + effective_h - P - addr_fs * 0.85
+    bottom_y = y0 + P * 0.5   # 事業所名／御中 が下回らない下限
 
-    # 郵便番号
-    c.setFont(font, addr_fs)
-    c.setFillColor(C_SUB)
-    if postal:
-        c.drawString(x0 + P, cur_y, f"〒{postal}")
-        cur_y -= LH * 0.95
-
-    # 住所
+    # ── 住所ブロック（郵便番号／住所の折り返し行）を先に確定する ─────
+    addr1_lines = []
     if addr1:
         a = addr1
         while a:
             line, a = _split_line(a, font, addr_fs, inner_w)
-            c.drawString(x0 + P, cur_y, line)
-            cur_y -= LH * 0.95
-    if addr2:
-        c.drawString(x0 + P, cur_y, addr2)
-        cur_y -= LH * 0.95
+            addr1_lines.append(line)
 
-    if postal or addr1 or addr2:
-        cur_y -= LH * 0.4
+    def _addr_layout(cv, comp: float) -> float:
+        """郵便番号／住所ブロックを描画（cv が None のときは計測のみ）し、
+        描画後の cur_y を返す。comp は行間の圧縮率（0.0=フォントサイズ分の
+        最小ピッチのみ）。"""
+        cur_y = top_y
+
+        def _sub(raw_dec: float, base: float) -> None:
+            nonlocal cur_y
+            cur_y -= base + (raw_dec - base) * comp
+
+        if cv:
+            cv.setFont(font, addr_fs)
+            cv.setFillColor(C_SUB)
+        if postal:
+            if cv:
+                cv.drawString(x0 + P, cur_y, f"〒{postal}")
+            _sub(LH * 0.95, addr_fs)
+        for line in addr1_lines:
+            if cv:
+                cv.drawString(x0 + P, cur_y, line)
+            _sub(LH * 0.95, addr_fs)
+        if addr2:
+            if cv:
+                cv.drawString(x0 + P, cur_y, addr2)
+            _sub(LH * 0.95, addr_fs)
+        if postal or addr1 or addr2:
+            _sub(LH * 0.4, 0.0)
+        return cur_y
 
     if not company:
+        natural_height   = top_y - _addr_layout(None, 1.0)
+        min_height       = top_y - _addr_layout(None, 0.0)
+        available_height = top_y - bottom_y
+        if natural_height <= available_height:
+            comp = 1.0
+        elif available_height <= min_height:
+            comp = 0.0
+        else:
+            comp = (available_height - min_height) / (natural_height - min_height)
+        _addr_layout(c, comp)
         return
 
-    c.setFillColor(black)
     gochu = " 御中"
 
-    # 手動改行なし、かつ10ptで1行に収まる場合：最大11ptで単行出力
+    # ── 事業所名（＋御中）のレイアウトを先に確定する ─────────────────
+    single_line = None
+    all_lines = None
     if "\n" not in company and stringWidth(company + gochu, font, 10.0) <= co_avail:
         fs = _fit_text(company + gochu, font, co_max_fs, co_avail, min_size=10.0)
-        c.setFont(font, fs)
-        c.drawString(x0 + indent1, cur_y, company + gochu)
-        return
+        single_line = (company + gochu, fs)
+        company_natural = company_min = 0.0
+    else:
+        # 10ptで1行に収まらない、または手動改行あり → 10ptで折り返す
+        # 御中は最終行の末尾に付くよう、折り返しと同時に処理する
+        co_fs   = 10.0
+        gochu_w = stringWidth(gochu, font, co_fs)
 
-    # 10ptで1行に収まらない、または手動改行あり → 10ptで折り返す
-    # 御中は最終行の末尾に付くよう、折り返しと同時に処理する
-    co_fs   = 10.0
-    c.setFont(font, co_fs)
-    gochu_w = stringWidth(gochu, font, co_fs)
+        segments  = [s for s in company.split("\n") if s]
+        all_lines = []
 
-    segments  = [s for s in company.split("\n") if s]
-    all_lines = []
-
-    for seg_idx, seg in enumerate(segments):
-        is_last = (seg_idx == len(segments) - 1)
-        rem = seg
-        while rem:
-            if is_last and stringWidth(rem + gochu, font, co_fs) <= co_avail:
-                # 残り＋御中が1行に収まる → 最終行として確定
-                all_lines.append(rem + gochu)
-                rem = ""
-            else:
-                line, rem = _split_line(rem, font, co_fs, co_avail)
-                if is_last and not rem:
-                    # lineはco_availに収まるが御中が入らない
-                    # → lineを詰めて御中スペースを確保し、あふれ分をremへ戻す
-                    trimmed, rem = _split_line(line, font, co_fs, co_avail - gochu_w)
-                    all_lines.append(trimmed)
+        for seg_idx, seg in enumerate(segments):
+            is_last = (seg_idx == len(segments) - 1)
+            rem = seg
+            while rem:
+                if is_last and stringWidth(rem + gochu, font, co_fs) <= co_avail:
+                    # 残り＋御中が1行に収まる → 最終行として確定
+                    all_lines.append(rem + gochu)
+                    rem = ""
                 else:
-                    all_lines.append(line)
+                    line, rem = _split_line(rem, font, co_fs, co_avail)
+                    if is_last and not rem:
+                        # lineはco_availに収まるが御中が入らない
+                        # → lineを詰めて御中スペースを確保し、あふれ分をremへ戻す
+                        trimmed, rem = _split_line(line, font, co_fs, co_avail - gochu_w)
+                        all_lines.append(trimmed)
+                    else:
+                        all_lines.append(line)
+
+        n_gaps = max(0, len(all_lines) - 1)
+        company_natural = n_gaps * LH * 0.9
+        company_min     = n_gaps * co_fs
+
+    # 「圧縮なし(comp=1)」と「最小ピッチ(comp=0)」の高さから、氏名の
+    # 下限に収まるよう比例配分で圧縮率を決める。
+    addr_natural = top_y - _addr_layout(None, 1.0)
+    addr_min     = top_y - _addr_layout(None, 0.0)
+    natural_height    = addr_natural + company_natural
+    min_height        = addr_min + company_min
+    available_height  = top_y - bottom_y
+
+    if natural_height <= available_height:
+        comp = 1.0
+    elif available_height <= min_height:
+        comp = 0.0
+    else:
+        comp = (available_height - min_height) / (natural_height - min_height)
+
+    cur_y = _addr_layout(c, comp)
+
+    c.setFillColor(black)
+
+    if single_line:
+        text, fs = single_line
+        c.setFont(font, fs)
+        c.drawString(x0 + indent1, cur_y, text)
+        return
 
     if not all_lines:
         return
 
+    co_fs = 10.0
+    c.setFont(font, co_fs)
     for i, line in enumerate(all_lines):
         c.drawString(x0 + indent1, cur_y, line)
         if i < len(all_lines) - 1:
-            cur_y -= LH * 0.9
+            cur_y -= co_fs + (LH * 0.9 - co_fs) * comp
 
     # ── バーコード描画 ────────────────────────────────────────────────
     if use_barcode:

@@ -335,6 +335,90 @@ def test_draw_normal_short_person_name_single_drawstring_call():
     assert drawn[0][2] == "山田太郎　様"
 
 
+_LONG_ADDR1 = (
+    "東京都千代田区丸の内一丁目1番1号丸の内センタービルディング"
+    "南館西棟高層階10階1001号室ABCオフィス内サンプル部門"
+)
+
+
+def _label_bottom_fitz(layout_key="a_one_28185"):
+    """generate_label_pdf の1面目ラベルの下端をfitz座標系（Y軸上から下）で返す。"""
+    layout = svc.LABEL_LAYOUTS[layout_key]
+    _, y0 = svc._label_origin(0, 0, layout)
+    return layout.page_h_mm * mm - y0
+
+
+def _all_span_bboxes(path):
+    doc = fitz.open(path)
+    page = doc[0]
+    d = page.get_text("dict")
+    boxes = []
+    for block in d["blocks"]:
+        for line in block.get("lines", []):
+            for span in line["spans"]:
+                boxes.append((span["bbox"][1], span["bbox"][3], span["text"]))
+    return boxes
+
+
+def test_generate_label_pdf_long_address_does_not_overflow_label(tmp_path):
+    """住所が長く自動折り返しの行数が増えても、後続要素（会社名・役職・氏名）
+    がラベル下端の外側に描画されないことを確認する（はみ出し防止のリグレッション）。"""
+    entry = _FakeEntry(company_name="テスト商事株式会社大阪支店営業第一課", entry_mode="normal")
+    entry.postal_code  = "123-4567"
+    entry.address1     = _LONG_ADDR1
+    entry.address2     = "気付　株式会社サンプル内　総務部宛"
+    entry.title        = "取締役執行役員営業本部長兼海外事業部担当"
+    entry.person_name  = "山田太郎"
+
+    out = str(tmp_path / "long_addr.pdf")
+    generate_label_pdf([entry], out, batch_mode="normal", layout_key="a_one_28185")
+
+    bottom = _label_bottom_fitz()
+    boxes = _all_span_bboxes(out)
+    assert boxes
+    overflowing = [b for b in boxes if b[1] > bottom + 0.5]
+    assert overflowing == []
+
+
+def test_generate_label_pdf_long_address_does_not_overlap_person_line(tmp_path):
+    """長い住所で会社名・役職が下に押し出されても、氏名行と重ならない
+    （行間圧縮によって衝突を避けられている）ことを確認する。"""
+    entry = _FakeEntry(company_name="テスト商事株式会社", entry_mode="normal")
+    entry.postal_code  = "123-4567"
+    entry.address1     = _LONG_ADDR1
+    entry.title        = "営業部長"
+    entry.person_name  = "山田太郎"
+
+    out = str(tmp_path / "long_addr_overlap.pdf")
+    generate_label_pdf([entry], out, batch_mode="normal", layout_key="a_one_28185")
+
+    boxes = _all_span_bboxes(out)
+    person_boxes = [b for b in boxes if "山田太郎" in b[2]]
+    other_boxes  = [b for b in boxes if "山田太郎" not in b[2]]
+    assert person_boxes and other_boxes
+    # 氏名行の上端(top)が、それ以外の要素の下端(bottom)より下に来ないこと（重なり無し）
+    person_top = min(b[0] for b in person_boxes)
+    others_bottom = max(b[1] for b in other_boxes)
+    assert person_top >= others_bottom - 0.5
+
+
+def test_generate_label_pdf_no_person_long_address_does_not_overflow_label(tmp_path):
+    """氏名なしモードでも、住所が長く折り返し行数が増えたときに事業所名／
+    御中がラベル下端の外側に描画されないことを確認する。"""
+    entry = _FakeEntry(company_name="テスト商事株式会社大阪支店営業第一課", entry_mode="no_person")
+    entry.postal_code  = "123-4567"
+    entry.address1     = _LONG_ADDR1 + "東西南北ビル"
+
+    out = str(tmp_path / "long_addr_no_person.pdf")
+    generate_label_pdf([entry], out, batch_mode="normal", layout_key="a_one_28185")
+
+    bottom = _label_bottom_fitz()
+    boxes = _all_span_bboxes(out)
+    assert boxes
+    overflowing = [b for b in boxes if b[1] > bottom + 0.5]
+    assert overflowing == []
+
+
 def test_generate_label_pdf_start_slot_shifts_first_entry_origin():
     """start_slot を指定すると、最初のエントリがそのスロットの座標に描画される"""
     from io import BytesIO
